@@ -27,7 +27,7 @@ const Layout = ({ activeTab, onTabChange, children }: LayoutProps) => {
               </div>
               <div>
                 <h1 className="font-montserrat font-700 text-lg leading-tight tracking-wide">
-                  АвтоТехЦентр
+                  REMTECH
                 </h1>
                 <p className="text-[10px] text-blue-200 uppercase tracking-widest">
                   Калькулятор нормачасов
@@ -73,7 +73,7 @@ const Layout = ({ activeTab, onTabChange, children }: LayoutProps) => {
       <footer className="bg-white border-t border-border mt-auto">
         <div className="max-w-7xl mx-auto px-6 py-3">
           <p className="text-xs text-muted-foreground text-center">
-            АвтоТехЦентр · Система расчёта стоимости работ · 2024
+            REMTECH · Система расчёта стоимости работ · 2024
           </p>
         </div>
       </footer>

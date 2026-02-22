@@ -19,14 +19,24 @@ export interface HistoryItem {
   costWithMarkup: number;
 }
 
+// Список работ (без нормачасов) — загружается на шаге 1
+export interface WorkEntry {
+  id: string;
+  name: string;
+}
+
 interface AppDataContextType {
   carDatabase: CarBrand[];
   setCarDatabase: (data: CarBrand[]) => void;
+  worksDatabase: WorkEntry[];
+  setWorksDatabase: (data: WorkEntry[]) => void;
 }
 
 export const AppDataContext = createContext<AppDataContextType>({
   carDatabase: CAR_DATABASE,
   setCarDatabase: () => {},
+  worksDatabase: [],
+  setWorksDatabase: () => {},
 });
 
 export const useAppData = () => useContext(AppDataContext);
@@ -36,6 +46,7 @@ const Index = () => {
   const [ratePerHour, setRatePerHour] = useState<number>(2500);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [carDatabase, setCarDatabase] = useState<CarBrand[]>(CAR_DATABASE);
+  const [worksDatabase, setWorksDatabase] = useState<WorkEntry[]>([]);
 
   const addToHistory = (item: Omit<HistoryItem, "id" | "date">) => {
     const newItem: HistoryItem = {
@@ -47,7 +58,7 @@ const Index = () => {
   };
 
   return (
-    <AppDataContext.Provider value={{ carDatabase, setCarDatabase }}>
+    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === "calculator" && (
           <CalculatorPage ratePerHour={ratePerHour} onAddToHistory={addToHistory} />
