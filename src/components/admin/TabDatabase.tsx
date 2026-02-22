@@ -20,7 +20,7 @@ const TabDatabase = () => {
   const [carsStatus, setCarsStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [filledStatus, setFilledStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [pendingWorks, setPendingWorks] = useState<WorkEntry[] | null>(null);
+  const [pendingWorks, setPendingWorks] = useState<WorkEntry[] | null>(() => worksDatabase.length > 0 ? worksDatabase : null);
   const [dbReady, setDbReady] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const filledFileRef = useRef<HTMLInputElement>(null);
@@ -95,6 +95,10 @@ const TabDatabase = () => {
       });
       setDbReady(true);
       await reloadCarDb();
+      // Автоматически восстанавливаем ранее загруженные работы
+      if (worksDatabase.length > 0) {
+        setPendingWorks(worksDatabase);
+      }
     } catch (e) {
       setCarsStatus({ type: "error", msg: `Ошибка: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
     } finally {
@@ -301,6 +305,14 @@ const TabDatabase = () => {
           onFile={handleWorksFile} onUpdate={handleWorksUpdate} hasData={hasWorks}
           onDownloadTemplate={downloadWorksTemplate} status={worksStatus}
           disabled={!step1Done && !hasCars}>
+          {hasWorks && step1Done && (
+            <div className="mb-3 flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+              <Icon name="CheckCircle" size={14} className="shrink-0 mt-0.5" />
+              <span>
+                Ранее загруженные <strong>{worksDatabase.length} работ</strong> автоматически привязаны к новой базе авто. Этот шаг можно пропустить или обновить список работ.
+              </span>
+            </div>
+          )}
           <div className="overflow-x-auto rounded border border-border mb-4 max-w-xs">
             <table className="text-xs w-full border-collapse">
               <thead><tr className="bg-[hsl(215,70%,22%)] text-white"><th className="px-3 py-1.5 text-left">Наименование работы</th></tr></thead>
