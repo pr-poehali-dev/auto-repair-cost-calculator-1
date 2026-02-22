@@ -56,6 +56,49 @@ export function downloadCarsTemplate() {
   XLSX.writeFile(wb, "шаблон_база_авто.xlsx");
 }
 
+export function filterAndDownloadOldCars(file: File, onDone: (removed: number, total: number, fileName: string) => void, onError: (msg: string) => void) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = new Uint8Array(ev.target!.result as ArrayBuffer);
+      const wb = XLSX.read(data, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const allRows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      if (allRows.length < 2) { onError("Файл пустой."); return; }
+
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(5, allRows.length); i++) {
+        const first = String(allRows[i][0] ?? "").trim().toLowerCase();
+        if (first === "марка" || first === "brand") { headerIdx = i; break; }
+      }
+
+      const header = allRows[headerIdx] as unknown[];
+      const dataRows = allRows.slice(headerIdx + 1).filter(r => (r as unknown[]).some(c => c !== ""));
+      const cutoffYear = new Date().getFullYear() - 30;
+
+      const filtered = dataRows.filter((row) => {
+        const yearTo = String((row as unknown[])[4] ?? "").trim();
+        if (!yearTo || yearTo === "" || yearTo === "н.в." || yearTo === "по н.в." || yearTo === "—") return true;
+        const y = parseInt(yearTo, 10);
+        if (isNaN(y)) return true;
+        return y >= cutoffYear;
+      });
+
+      const removed = dataRows.length - filtered.length;
+      const newWs = XLSX.utils.aoa_to_sheet([header, ...filtered]);
+      newWs["!cols"] = CAR_COLUMNS.map(() => ({ wch: 18 }));
+      const newWb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(newWb, newWs, wb.SheetNames[0]);
+      const outName = file.name.replace(/\.xlsx?$/i, "") + `_без_старых.xlsx`;
+      XLSX.writeFile(newWb, outName);
+      onDone(removed, dataRows.length, outName);
+    } catch {
+      onError("Ошибка чтения файла.");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 export function downloadWorksTemplate() {
   const headers = ["Наименование работы"];
   const example = [

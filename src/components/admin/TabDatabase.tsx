@@ -7,10 +7,15 @@ import {
   FUNC_UPLOAD_CARS_CHUNK, CAR_COLUMNS,
   downloadCarsTemplate, downloadWorksTemplate,
   mergeWorks, parseWorksList, generateNormsTemplate, parseFilledTemplate,
+  filterAndDownloadOldCars,
 } from "@/components/admin/adminHelpers";
 
 const TabDatabase = () => {
   const { carDatabase, setCarDatabase, carDbLoading, carDbCount, reloadCarDb, worksDatabase, setWorksDatabase } = useAppData();
+
+  const [filterStatus, setFilterStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [filterLoading, setFilterLoading] = useState(false);
+  const filterFileRef = useRef<HTMLInputElement>(null);
 
   const [carsStatus, setCarsStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -164,6 +169,62 @@ const TabDatabase = () => {
         <StepBadge n={2} active={step1Done && !step2Done} done={step2Done} label="Список работ" />
         <Icon name="ChevronRight" size={16} className="text-muted-foreground hidden sm:block" />
         <StepBadge n={3} active={step2Done && !step3Done} done={step3Done} label="Нормативы" />
+      </div>
+
+      {/* Блок очистки базы */}
+      <div className="border border-amber-200 rounded-lg p-5 bg-amber-50 space-y-3">
+        <div className="flex items-start gap-3">
+          <Icon name="FilterX" size={20} className="text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-sm text-amber-900">Очистка базы от устаревших моделей</p>
+            <p className="text-xs text-amber-700 mt-1">
+              Загрузите xlsx-файл базы авто — скрипт удалит все строки, у которых год окончания выпуска старше 30 лет
+              (до {new Date().getFullYear() - 30} года включительно), и скачает готовый очищенный файл.
+            </p>
+          </div>
+        </div>
+
+        {filterStatus && (
+          <div className={`flex items-start gap-2 p-3 rounded-lg border text-xs ${filterStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+            <Icon name={filterStatus.type === "success" ? "CheckCircle" : "XCircle"} size={14} className="shrink-0 mt-0.5" />
+            {filterStatus.msg}
+          </div>
+        )}
+
+        <input ref={filterFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (!f) return;
+            e.target.value = "";
+            setFilterLoading(true);
+            setFilterStatus(null);
+            filterAndDownloadOldCars(
+              f,
+              (removed, total, fileName) => {
+                setFilterLoading(false);
+                setFilterStatus({
+                  type: "success",
+                  msg: `Готово! Удалено ${removed.toLocaleString("ru-RU")} строк из ${total.toLocaleString("ru-RU")}. Файл «${fileName}» скачан.`,
+                });
+              },
+              (msg) => {
+                setFilterLoading(false);
+                setFilterStatus({ type: "error", msg });
+              }
+            );
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => filterFileRef.current?.click()}
+          disabled={filterLoading}
+          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded text-sm font-semibold hover:bg-amber-700 transition-all disabled:opacity-60 disabled:pointer-events-none"
+        >
+          {filterLoading
+            ? <><Icon name="Loader" size={14} className="animate-spin" />Обрабатываю…</>
+            : <><Icon name="Upload" size={14} />Загрузить файл и скачать очищенный</>
+          }
+        </button>
       </div>
 
       <div className="border-t border-border pt-5 space-y-4">
