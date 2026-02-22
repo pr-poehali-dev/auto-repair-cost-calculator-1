@@ -245,35 +245,35 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-5">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-green-700 mb-1">Со своими запчастями</p>
-                      <p className="text-xs text-green-600">Клиент использует запчасти автотехцентра</p>
-                    </div>
-                    <Icon name="Package" size={18} className="text-green-600 mt-0.5" />
-                  </div>
-                  <p className="text-3xl font-bold font-montserrat text-green-700 mt-3">
-                    {costWithParts.toLocaleString("ru-RU")} ₽
-                  </p>
-                  <p className="text-xs text-green-600 mt-1">
-                    {result.hours} н/ч × {ratePerHour.toLocaleString("ru-RU")} ₽
-                  </p>
-                </div>
-
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-5">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-700 mb-1">С наценкой +20%</p>
-                      <p className="text-xs text-orange-600">Клиент использует сторонние запчасти</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-700 mb-1">Запчасти клиента</p>
+                      <p className="text-xs text-orange-600">С наценкой +20%. Сокращённая гарантия на работы до 3 месяцев и без гарантии на запчасти клиента!</p>
                     </div>
-                    <Icon name="TrendingUp" size={18} className="text-orange-600 mt-0.5" />
+                    <Icon name="TrendingUp" size={18} className="text-orange-600 mt-0.5 shrink-0" />
                   </div>
                   <p className="text-3xl font-bold font-montserrat text-orange-700 mt-3">
                     {costWithMarkup.toLocaleString("ru-RU")} ₽
                   </p>
                   <p className="text-xs text-orange-600 mt-1">
                     {costWithParts.toLocaleString("ru-RU")} ₽ + 20% = {(costWithMarkup - costWithParts).toLocaleString("ru-RU")} ₽
+                  </p>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-green-700 mb-1">Запчасти автотехцентра Remtech</p>
+                      <p className="text-xs text-green-600">Расширенная гарантия 1 год на работы и запчасти</p>
+                    </div>
+                    <Icon name="ShieldCheck" size={18} className="text-green-600 mt-0.5 shrink-0" />
+                  </div>
+                  <p className="text-3xl font-bold font-montserrat text-green-700 mt-3">
+                    {costWithParts.toLocaleString("ru-RU")} ₽
+                  </p>
+                  <p className="text-xs text-green-600 mt-1">
+                    {result.hours} н/ч × {ratePerHour.toLocaleString("ru-RU")} ₽
                   </p>
                 </div>
               </div>

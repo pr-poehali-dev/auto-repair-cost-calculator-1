@@ -29,6 +29,24 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [uploadStatus, setUploadStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  const handleDownloadTemplate = () => {
+    const headers = ["Марка", "Модель", "Поколение", "Годы", "Модификация", "Двигатель", "КПП", "Мощность", "Работа", "Нормачасы"];
+    const example = [
+      ["Toyota", "Camry", "V70", "2017-н.в.", "2.5 AT", "2.5 бензин (181 л.с.)", "Автомат", "181 л.с.", "Замена масла двигателя", 0.5],
+      ["Toyota", "Camry", "V70", "2017-н.в.", "2.5 AT", "", "", "", "Замена тормозных колодок передних", 1.0],
+      ["Toyota", "Camry", "V70", "2017-н.в.", "2.5 AT", "", "", "", "Замена воздушного фильтра", 0.3],
+      ["Toyota", "Camry", "V70", "2017-н.в.", "3.5 AT", "3.5 бензин (249 л.с.)", "Автомат", "249 л.с.", "Замена масла двигателя", 0.5],
+      ["Toyota", "Camry", "V70", "2017-н.в.", "3.5 AT", "", "", "", "Замена тормозных колодок передних", 1.2],
+      ["BMW", "3 Series", "G20", "2018-н.в.", "320i AT", "2.0 бензин (184 л.с.)", "Автомат", "184 л.с.", "Замена масла двигателя", 0.7],
+      ["BMW", "3 Series", "G20", "2018-н.в.", "320i AT", "", "", "", "Замена тормозных колодок передних", 1.2],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...example]);
+    ws["!cols"] = headers.map((_, i) => ({ wch: i === 8 ? 35 : i < 5 ? 14 : 20 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "База нормачасов");
+    XLSX.writeFile(wb, "шаблон_нормачасов.xlsx");
+  };
+
   const handleAuth = () => {
     if (codeInput === ACCESS_CODE) {
       setAuthenticated(true);
@@ -351,14 +369,23 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
           </div>
 
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileUpload} />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-2 px-6 py-3 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm disabled:opacity-50"
-          >
-            <Icon name={uploading ? "Loader" : "Upload"} size={16} />
-            {uploading ? "Загружаю..." : "Загрузить Excel-файл"}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-2 px-6 py-3 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm disabled:opacity-50"
+            >
+              <Icon name={uploading ? "Loader" : "Upload"} size={16} />
+              {uploading ? "Загружаю..." : "Загрузить Excel-файл"}
+            </button>
+            <button
+              onClick={handleDownloadTemplate}
+              className="flex items-center gap-2 px-6 py-3 border border-[hsl(215,70%,22%)] text-[hsl(215,70%,22%)] rounded text-sm font-semibold hover:bg-blue-50 transition-all"
+            >
+              <Icon name="Download" size={16} />
+              Скачать шаблон
+            </button>
+          </div>
         </div>
       </div>
 
