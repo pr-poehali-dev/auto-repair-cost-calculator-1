@@ -175,23 +175,26 @@ const TabDatabase = () => {
           onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars || carDbCount > 0}
           onDownloadTemplate={downloadCarsTemplate} status={carsStatus}>
           {uploadProgress !== null && (
-            <div className="mb-4 space-y-1.5">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>
+            <div className="mb-4 space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-medium text-blue-800">
                   {uploadProgress < 10
-                    ? "Читаю файл…"
+                    ? "⏳ Читаю файл…"
+                    : uploadProgress < 95
+                    ? "📤 Загружаю в базу данных…"
                     : uploadProgress < 100
-                    ? "Загружаю в базу данных…"
-                    : "Готово!"}
+                    ? "⚙️ Финальная обработка…"
+                    : "✅ Готово!"}
                 </span>
-                <span className="font-semibold">{uploadProgress}%</span>
+                <span className="text-sm font-bold text-blue-900">{uploadProgress}%</span>
               </div>
-              <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-3 bg-blue-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[hsl(215,70%,22%)] rounded-full"
-                  style={{ width: `${uploadProgress}%`, transition: "width 0.3s ease" }}
+                  className="h-full bg-[hsl(215,70%,22%)] rounded-full shadow-sm"
+                  style={{ width: `${uploadProgress}%`, transition: "width 0.4s ease" }}
                 />
               </div>
+              <p className="text-xs text-blue-600">Не закрывайте страницу до завершения загрузки</p>
             </div>
           )}
           {carDbLoading && uploadProgress === null && (
