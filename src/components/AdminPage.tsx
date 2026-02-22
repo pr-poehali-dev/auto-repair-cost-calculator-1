@@ -2,6 +2,9 @@ import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { CarBrand, Work } from "@/data/carDatabase";
+
+const FUNC_UPLOAD_CARS = "https://functions.poehali.dev/0f36901b-d880-4d5e-aa33-e9e1b64c0586";
+
 import * as XLSX from "xlsx";
 import TabDashboard from "@/components/admin/TabDashboard";
 import TabBranches from "@/components/admin/TabBranches";
@@ -87,25 +90,7 @@ function downloadWorksTemplate() {
   XLSX.writeFile(wb, "шаблон_список_работ.xlsx");
 }
 
-function mergeCars(existing: CarBrand[], incoming: CarBrand[]): CarBrand[] {
-  const result: CarBrand[] = [...existing];
-  incoming.forEach((inBrand) => {
-    const brand = result.find((b) => b.id === inBrand.id);
-    if (!brand) { result.push({ ...inBrand }); return; }
-    inBrand.models.forEach((inModel) => {
-      const model = brand.models.find((m) => m.id === inModel.id);
-      if (!model) { brand.models.push({ ...inModel }); return; }
-      inModel.generations.forEach((inGen) => {
-        const gen = model.generations.find((g) => g.id === inGen.id);
-        if (!gen) { model.generations.push({ ...inGen }); return; }
-        inGen.modifications.forEach((inMod) => {
-          if (!gen.modifications.find((m) => m.id === inMod.id)) gen.modifications.push({ ...inMod });
-        });
-      });
-    });
-  });
-  return result;
-}
+
 
 function mergeWorks(existing: WorkEntry[], incoming: WorkEntry[]): WorkEntry[] {
   const names = new Set(existing.map((w) => w.name.toLowerCase()));
@@ -339,7 +324,7 @@ const StepBadge = ({ n, active, done, label }: { n: number; active: boolean; don
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
-  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase } = useAppData();
+  const { carDatabase, setCarDatabase, carDbLoading, carDbCount, reloadCarDb, worksDatabase, setWorksDatabase } = useAppData();
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
 
   // Rate
@@ -351,9 +336,9 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [carsStatus, setCarsStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [filledStatus, setFilledStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [pendingCars, setPendingCars] = useState<CarBrand[] | null>(null);
   const [pendingWorks, setPendingWorks] = useState<WorkEntry[] | null>(null);
   const [dbReady, setDbReady] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const filledFileRef = useRef<HTMLInputElement>(null);
 
   const handleSaveRate = () => {
@@ -364,19 +349,48 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setTimeout(() => setRateSaved(false), 3000);
   };
 
-  const parseCarsFile = (file: File, onResult: (cars: CarBrand[]) => void, onError: (m: string) => void) => {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = new Uint8Array(ev.target!.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: "array" });
-        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-        const cars = parseCarBase(rows);
-        if (!cars || cars.length === 0) onError("Не удалось распознать автомобили. Скачайте шаблон и проверьте формат.");
-        else onResult(cars);
-      } catch { onError("Ошибка чтения файла."); }
-    };
-    reader.readAsArrayBuffer(file);
+  // Загружаем файл на бэкенд (поддержка больших файлов 200мб+)
+  const uploadCarsToBackend = async (file: File, mode: "replace" | "merge") => {
+    setUploadProgress(0);
+    setCarsStatus(null);
+    try {
+      // Читаем файл как ArrayBuffer → base64
+      setUploadProgress(10);
+      const arrayBuffer = await file.arrayBuffer();
+      setUploadProgress(30);
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      const file_b64 = btoa(binary);
+      setUploadProgress(60);
+
+      const res = await fetch(FUNC_UPLOAD_CARS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_b64, mode }),
+      });
+      setUploadProgress(90);
+      const data = await res.json();
+      const parsed = typeof data === "string" ? JSON.parse(data) : data;
+
+      if (!res.ok || parsed.error) {
+        setCarsStatus({ type: "error", msg: parsed.error || "Ошибка загрузки файла на сервер." });
+      } else {
+        setCarsStatus({
+          type: "success",
+          msg: `Загружено: ${parsed.brands} марок, ${parsed.modifications} модификаций из «${file.name}». Пропущено строк: ${parsed.skipped}.`,
+        });
+        setDbReady(true);
+        await reloadCarDb();
+      }
+    } catch (e) {
+      setCarsStatus({ type: "error", msg: `Ошибка: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
+    } finally {
+      setUploadProgress(null);
+    }
   };
 
   const parseWorksFile = (file: File, onResult: (w: WorkEntry[]) => void, onError: (m: string) => void) => {
@@ -394,15 +408,9 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleCarsFile = (file: File) => parseCarsFile(file, (cars) => {
-    const total = cars.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
-    setPendingCars(cars); setCarsStatus({ type: "success", msg: `Загружено: ${cars.length} марок, ${total} модификаций из «${file.name}»` });
-  }, (msg) => setCarsStatus({ type: "error", msg }));
+  const handleCarsFile = (file: File) => uploadCarsToBackend(file, "replace");
 
-  const handleCarsUpdate = (file: File) => parseCarsFile(file, (incoming) => {
-    const merged = mergeCars(pendingCars ?? carDatabase, incoming);
-    setPendingCars(merged); setCarsStatus({ type: "success", msg: `Обновлено: добавлено ${incoming.length} марок. Нормативы старых моделей сохранены.` });
-  }, (msg) => setCarsStatus({ type: "error", msg }));
+  const handleCarsUpdate = (file: File) => uploadCarsToBackend(file, "merge");
 
   const handleWorksFile = (file: File) => parseWorksFile(file, (works) => {
     setPendingWorks(works); setWorksDatabase(works); setWorksStatus({ type: "success", msg: `Загружено ${works.length} видов работ из «${file.name}»` });
@@ -416,7 +424,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   }, (msg) => setWorksStatus({ type: "error", msg }));
 
   const handleFilledFile = (file: File) => {
-    const cars = pendingCars ?? carDatabase;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -424,11 +431,11 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         const wb = XLSX.read(data, { type: "array" });
         const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
         if (rows.length === 0) { setFilledStatus({ type: "error", msg: "Файл пустой." }); return; }
-        const { updatedCars, totalFilled } = parseFilledTemplate(rows, cars);
+        const { updatedCars, totalFilled } = parseFilledTemplate(rows, carDatabase);
         if (totalFilled === 0) {
           setFilledStatus({ type: "error", msg: "Нормачасы не найдены. Убедитесь что столбец J заполнен числами." });
         } else {
-          setCarDatabase(updatedCars); if (pendingCars) setPendingCars(updatedCars);
+          setCarDatabase(updatedCars);
           setDbReady(true); setFilledStatus({ type: "success", msg: `База знаний готова! Заполнено ${totalFilled} нормативов из «${file.name}»` });
         }
       } catch { setFilledStatus({ type: "error", msg: "Ошибка чтения файла." }); }
@@ -437,9 +444,9 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   };
 
   const totalWorks = carDatabase.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + mod.works.length, 0), 0), 0), 0);
-  const hasCars = carDatabase.length > 0;
+  const hasCars = carDatabase.length > 0 || carDbCount > 0;
   const hasWorks = worksDatabase.length > 0;
-  const step1Done = !!pendingCars || hasCars;
+  const step1Done = hasCars;
   const step2Done = !!pendingWorks || hasWorks;
   const step3Done = dbReady || (hasCars && hasWorks && totalWorks > 0);
   const templateReady = step1Done && step2Done;
@@ -506,27 +513,51 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
               <div className="border-t border-border pt-5 space-y-4">
                 {/* Step 1 */}
                 <UploadBlock title="Шаг 1 — Загрузите базу автомобилей"
-                  description="Каждая строка — одна модификация: Марка | Модель | Поколение | Годы от | Годы до | Серия | Модификация | Двигатель | КПП | Мощность"
-                  buttonLabel="Загрузить базу авто (.xlsx)" accept=".xlsx,.xls"
-                  onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars}
+                  description="Файлы до 200мб+. Каждая строка — одна модификация. Поддерживается 77 колонок по стандарту каталога."
+                  buttonLabel={uploadProgress !== null ? `Загружается ${uploadProgress}%...` : "Загрузить базу авто (.xlsx)"}
+                  accept=".xlsx,.xls"
+                  onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars || carDbCount > 0}
                   onDownloadTemplate={downloadCarsTemplate} status={carsStatus}>
+                  {uploadProgress !== null && (
+                    <div className="mb-4 space-y-1.5">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Отправка на сервер и парсинг…</span>
+                        <span>{uploadProgress}%</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-[hsl(215,70%,22%)] transition-all duration-500 rounded-full" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    </div>
+                  )}
+                  {carDbLoading && uploadProgress === null && (
+                    <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground animate-pulse">
+                      <Icon name="Loader" size={13} />Загрузка базы из сервера…
+                    </div>
+                  )}
+                  {carDbCount > 0 && uploadProgress === null && (
+                    <div className="mb-3 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+                      <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
+                    </div>
+                  )}
                   <div className="overflow-x-auto rounded border border-border mb-4">
-                    <table className="text-xs w-full border-collapse">
+                    <table className="text-xs border-collapse">
                       <thead>
                         <tr className="bg-[hsl(215,70%,22%)] text-white">
-                          {["Марка","Модель","Поколение","Годы от","Годы до","Серия","Модификация","Двигатель","КПП","Мощность"].map((h) => (
+                          {CAR_COLUMNS.slice(0, 10).map((h) => (
                             <th key={h} className="px-2 py-1.5 text-center whitespace-nowrap border-r border-blue-800 last:border-0">{h}</th>
                           ))}
+                          <th className="px-2 py-1.5 text-center whitespace-nowrap text-blue-200">… ещё {CAR_COLUMNS.length - 10} колонок</th>
                         </tr>
                       </thead>
                       <tbody>
                         {[
-                          ["Toyota","Camry","VII (V70)","2017","н.в.","SE","2.5 AT","2.5 бенз.","Автомат","181 л.с."],
-                          ["Toyota","Camry","VII (V70)","2017","н.в.","SE","3.5 AT","3.5 бенз.","Автомат","249 л.с."],
-                          ["BMW","3 Series","G20","2018","н.в.","","320i AT","2.0 бенз.","Автомат","184 л.с."],
+                          ["Toyota","Camry","VII (V70)","2017","н.в.","SE","2.5 AT","Седан","5","4885"],
+                          ["Toyota","Camry","VII (V70)","2017","н.в.","SE","3.5 AT","Седан","5","4885"],
+                          ["BMW","3 Series","G20","2018","н.в.","","320i AT","Седан","5","4709"],
                         ].map((row, i) => (
                           <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                             {row.map((c, j) => <td key={j} className="px-2 py-1.5 border-r border-b border-border text-center text-gray-600 last:border-r-0">{c}</td>)}
+                            <td className="px-2 py-1.5 text-muted-foreground/40 text-center">…</td>
                           </tr>
                         ))}
                       </tbody>
