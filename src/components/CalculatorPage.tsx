@@ -326,7 +326,15 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                       <SelectBox label="Добавить работу" value={workId}
                         onChange={(v) => { setWorkId(v); setShowResult(false); }}
                         options={works
-                          .filter((w) => !rawCart.some((c) => c.workId === w.id))
+                          .filter((w) => {
+                            if (rawCart.some((c) => c.workId === w.id)) return false;
+                            // Скрываем работу если она — сопутствующая к уже добавленной главной
+                            const isLinkedToExistingMain = applicableLinks.some(
+                              (g) => g.linkedWorkNames.includes(w.name) &&
+                                rawCart.some((c) => c.workName === g.mainWorkName)
+                            );
+                            return !isLinkedToExistingMain;
+                          })
                           .map((w) => ({ id: w.id, label: `${w.name} (${w.hours} н/ч)` }))}
                         placeholder="— Выберите работу —" />
                     </div>
@@ -351,57 +359,62 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Добавленные работы</span>
                         <span className="text-xs text-muted-foreground">Итого: <strong>{totalHours.toFixed(1)} н/ч</strong></span>
                       </div>
-                      {cart.map((item, i) => (
-                        <div key={item.workId}
-                          className={`flex items-center gap-3 px-4 py-3 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
-                          style={item.linkColor ? { borderLeft: `3px solid ${item.linkColor}` } : {}}>
-                          {/* Иконка: обычная или связанная */}
-                          {item.linkGroupId ? (
-                            <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                              style={{ background: item.linkColor }}>
-                              <Icon name="Link" size={10} className="text-white" />
-                            </div>
-                          ) : (
-                            <Icon name="Wrench" size={13} className="text-muted-foreground shrink-0" />
-                          )}
-
-                          <span className="flex-1 text-sm text-foreground">{item.workName}</span>
-
-                          {/* Часы: с вычетом или обычные */}
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {item.isLinkedChild ? (
-                              <span className="text-sm font-semibold shrink-0" style={{ color: item.linkColor }}>
-                                {item.baseHours} н/ч
-                              </span>
-                            ) : item.hours !== item.baseHours ? (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-muted-foreground line-through">{item.baseHours}</span>
-                                <span className="text-sm font-semibold" style={{ color: item.linkColor }}>
-                                  {item.hours} н/ч
-                                </span>
+                      {cart.filter((item) => !item.isLinkedChild).map((item, i) => {
+                        const group = applicableLinks.find((g) => g.mainWorkName === item.workName);
+                        const linkedItems = group
+                          ? works.filter((w) => group.linkedWorkNames.includes(w.name))
+                          : [];
+                        return (
+                          <div key={item.workId} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                            {/* Строка главной работы */}
+                            <div className="flex items-center gap-3 px-4 py-3"
+                              style={item.linkColor ? { borderLeft: `3px solid ${item.linkColor}` } : {}}>
+                              {item.linkGroupId ? (
+                                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                                  style={{ background: item.linkColor }}>
+                                  <Icon name="Link" size={10} className="text-white" />
+                                </div>
+                              ) : (
+                                <Icon name="Wrench" size={13} className="text-muted-foreground shrink-0" />
+                              )}
+                              <span className="flex-1 text-sm font-medium text-foreground">{item.workName}</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {item.hours !== item.baseHours ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground line-through">{item.baseHours}</span>
+                                    <span className="text-sm font-semibold" style={{ color: item.linkColor }}>{item.hours} н/ч</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-sm font-semibold text-[hsl(215,70%,22%)] shrink-0">{item.hours} н/ч</span>
+                                )}
                               </div>
-                            ) : (
-                              <span className="text-sm font-semibold text-[hsl(215,70%,22%)] shrink-0">{item.hours} н/ч</span>
+                              <span className="text-sm text-muted-foreground shrink-0 w-28 text-right">
+                                {(item.hours * ratePerHour).toLocaleString("ru-RU")} ₽
+                              </span>
+                              <button onClick={() => handleRemoveWork(item.workId)}
+                                className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0">
+                                <Icon name="X" size={14} />
+                              </button>
+                            </div>
+                            {/* Детализация сопутствующих работ */}
+                            {linkedItems.length > 0 && (
+                              <div className="pb-2" style={{ borderLeft: `3px solid ${item.linkColor}` }}>
+                                <div className="px-4 pt-0.5 pb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                  <Icon name="CornerDownRight" size={11} />
+                                  <span style={{ color: item.linkColor }}>Включено в норматив:</span>
+                                </div>
+                                {linkedItems.map((lw) => (
+                                  <div key={lw.id} className="flex items-center gap-3 px-4 py-1.5 ml-4">
+                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.linkColor }} />
+                                    <span className="flex-1 text-xs text-muted-foreground">{lw.name}</span>
+                                    <span className="text-xs font-medium shrink-0" style={{ color: item.linkColor }}>{lw.hours} н/ч</span>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
-
-                          <span className="text-sm text-muted-foreground shrink-0 w-28 text-right">
-                            {(item.hours * ratePerHour).toLocaleString("ru-RU")} ₽
-                          </span>
-                          <button onClick={() => handleRemoveWork(item.workId)}
-                            className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0">
-                            <Icon name="X" size={14} />
-                          </button>
-                        </div>
-                      ))}
-
-                      {/* Подпись о связях если они есть */}
-                      {hasLinkedItems && (
-                        <div className="px-4 py-2 bg-blue-50/60 border-t border-border flex items-center gap-2 text-xs text-muted-foreground">
-                          <Icon name="Link" size={12} />
-                          Работы одного цвета связаны — нормачасы скорректированы, дублирования нет
-                        </div>
-                      )}
+                        );
+                      })}
 
                       <div className="bg-blue-50 px-4 py-3 border-t border-border flex items-center justify-between">
                         <span className="text-sm font-semibold text-[hsl(215,70%,22%)]">Итого нормачасов:</span>
@@ -475,41 +488,57 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                   <span className="text-right">Цена со скидкой</span>
                   <span className="text-right">Цены с запчастями клиента</span>
                 </div>
-                {cart.map((item, i) => (
-                  <div key={item.workId}
-                    className={`px-4 py-3 grid gap-2 text-sm ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                    style={{ gridTemplateColumns: "1fr 80px 1fr 1fr", ...(item.linkColor ? { borderLeft: `3px solid ${item.linkColor}` } : {}) }}>
-                    <span className="text-foreground flex items-center gap-1.5">
-                      {item.linkGroupId && (
-                        <span className="w-2 h-2 rounded-full shrink-0 inline-block" style={{ background: item.linkColor }} />
-                      )}
-                      {item.workName}
-                      {item.isLinkedChild && (
-                        <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ background: `${item.linkColor}20`, color: item.linkColor }}>
-                          сопут.
+                {cart.filter((item) => !item.isLinkedChild).map((item, i) => {
+                  const group = applicableLinks.find((g) => g.mainWorkName === item.workName);
+                  const linkedItems = group
+                    ? works.filter((w) => group.linkedWorkNames.includes(w.name))
+                    : [];
+                  return (
+                    <div key={item.workId} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      <div className="px-4 py-3 grid gap-2 text-sm"
+                        style={{ gridTemplateColumns: "1fr 80px 1fr 1fr", ...(item.linkColor ? { borderLeft: `3px solid ${item.linkColor}` } : {}) }}>
+                        <span className="text-foreground flex items-center gap-1.5">
+                          {item.linkGroupId && (
+                            <span className="w-2 h-2 rounded-full shrink-0 inline-block" style={{ background: item.linkColor }} />
+                          )}
+                          {item.workName}
                         </span>
-                      )}
-                    </span>
-                    <div className="text-center">
-                      {item.hours !== item.baseHours ? (
-                        <div className="flex flex-col items-center">
-                          <span className="text-xs text-muted-foreground line-through">{item.baseHours}</span>
-                          <span className="font-semibold" style={{ color: item.linkColor }}>{item.hours}</span>
+                        <div className="text-center">
+                          {item.hours !== item.baseHours ? (
+                            <div className="flex flex-col items-center">
+                              <span className="text-xs text-muted-foreground line-through">{item.baseHours}</span>
+                              <span className="font-semibold" style={{ color: item.linkColor }}>{item.hours}</span>
+                            </div>
+                          ) : (
+                            <span className="font-semibold text-[hsl(215,70%,22%)]">{item.hours}</span>
+                          )}
                         </div>
-                      ) : (
-                        <span className="font-semibold text-[hsl(215,70%,22%)]">{item.hours}</span>
+                        <span className="text-right text-green-700 font-medium">{(item.hours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
+                        <span className="text-right text-orange-600 font-medium">{(item.hours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
+                      </div>
+                      {linkedItems.length > 0 && (
+                        <div className="pb-2" style={{ borderLeft: `3px solid ${item.linkColor}` }}>
+                          <div className="px-4 pt-0 pb-1 flex items-center gap-1.5 text-xs" style={{ color: item.linkColor }}>
+                            <Icon name="CornerDownRight" size={11} />
+                            <span>Включено в норматив:</span>
+                          </div>
+                          {linkedItems.map((lw) => (
+                            <div key={lw.id} className="px-4 py-1 ml-4 grid gap-2 text-xs text-muted-foreground"
+                              style={{ gridTemplateColumns: "1fr 80px 1fr 1fr" }}>
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.linkColor }} />
+                                {lw.name}
+                              </span>
+                              <span className="text-center font-medium" style={{ color: item.linkColor }}>{lw.hours}</span>
+                              <span className="text-right text-muted-foreground">{(lw.hours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
+                              <span className="text-right text-muted-foreground">{(lw.hours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <span className="text-right text-green-700 font-medium">{(item.hours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
-                    <span className="text-right text-orange-600 font-medium">{(item.hours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
-                  </div>
-                ))}
-                {hasLinkedItems && (
-                  <div className="px-4 py-2 bg-blue-50/60 border-t border-border flex items-center gap-2 text-xs text-muted-foreground">
-                    <Icon name="Link" size={12} />
-                    Работы одного цвета связаны — часы пересечений учтены без дублирования
-                  </div>
-                )}
+                  );
+                })}
                 <div className="px-4 py-3 bg-gray-100 border-t border-border grid gap-2 text-sm font-bold"
                   style={{ gridTemplateColumns: "1fr 80px 1fr 1fr" }}>
                   <span className="text-foreground">ИТОГО</span>
