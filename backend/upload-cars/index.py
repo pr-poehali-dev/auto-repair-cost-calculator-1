@@ -147,6 +147,13 @@ def parse_and_save(wb, mode: str) -> dict:
         doors_count = g(71); country_of_origin = g(72)
         vehicle_class = g(73); steering_position = g(74)
         safety_rating = g(75); safety_rating_name = g(76)
+        # cols 77-88: электромобиль
+        battery_capacity_kwh = g(77); electric_range_km = g(78)
+        charge_time_h = g(79); battery_type = g(80)
+        battery_temp_range_c = g(81); fast_charge_time_h = g(82)
+        fast_charge_desc = g(83); charge_connector_type = g(84)
+        consumption_kwh_per_100km = g(85); max_charge_power_kw = g(86)
+        battery_available_kwh = g(87); charge_cycles = g(88)
 
         # Формируем engine-строку
         parts = [p for p in [engine_type, f"{engine_volume_cc} см³" if engine_volume_cc else "", f"{power_val} л.с." if power_val else ""] if p]
@@ -170,13 +177,17 @@ def parse_and_save(wb, mode: str) -> dict:
                 fuel_city_l, fuel_highway_l, fuel_mixed_l, range_km, co2_g_km,
                 front_brakes, rear_brakes, front_suspension, rear_suspension,
                 doors_count, country_of_origin, vehicle_class, steering_position,
-                safety_rating, safety_rating_name
+                safety_rating, safety_rating_name,
+                battery_capacity_kwh, electric_range_km, charge_time_h, battery_type,
+                battery_temp_range_c, fast_charge_time_h, fast_charge_desc, charge_connector_type,
+                consumption_kwh_per_100km, max_charge_power_kw, battery_available_kwh, charge_cycles
             ) VALUES (
                 %s,%s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
             ) ON CONFLICT (id) DO UPDATE SET
                 name=EXCLUDED.name, engine=EXCLUDED.engine,
                 transmission=EXCLUDED.transmission, power=EXCLUDED.power
@@ -197,6 +208,9 @@ def parse_and_save(wb, mode: str) -> dict:
             front_brakes, rear_brakes, front_suspension, rear_suspension,
             doors_count, country_of_origin, vehicle_class, steering_position,
             safety_rating, safety_rating_name,
+            battery_capacity_kwh, electric_range_km, charge_time_h, battery_type,
+            battery_temp_range_c, fast_charge_time_h, fast_charge_desc, charge_connector_type,
+            consumption_kwh_per_100km, max_charge_power_kw, battery_available_kwh, charge_cycles,
         ))
         mods_seen.add(mod_id)
         total += 1

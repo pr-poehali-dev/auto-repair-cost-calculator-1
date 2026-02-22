@@ -134,7 +134,7 @@ const TabDatabase = () => {
       <div className="border-t border-border pt-5 space-y-4">
         {/* Step 1 */}
         <UploadBlock title="Шаг 1 — Загрузите базу автомобилей"
-          description="Файлы до 200мб+. Каждая строка — одна модификация. Поддерживается 77 колонок по стандарту каталога."
+          description="Файлы до 200мб+. Каждая строка — одна модификация. Поддерживается 89 колонок: кузов, двигатель, трансмиссия, подвеска, электро-данные."
           buttonLabel={uploadProgress !== null ? `Загружается ${uploadProgress}%...` : "Загрузить базу авто (.xlsx)"}
           accept=".xlsx,.xls"
           onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars || carDbCount > 0}
