@@ -284,7 +284,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
           </button>
 
           <div className="bg-white rounded-lg border border-border shadow-sm overflow-hidden">
-            <div className="bg-[hsl(215,70%,22%)] px-6 py-4 flex items-center gap-2">
+            <div className="px-6 py-4 flex items-center gap-2 bg-sky-350">
               <Icon name="FileText" size={18} className="text-white" />
               <h3 className="font-semibold text-sm uppercase tracking-wider text-white">Результат расчёта</h3>
             </div>
