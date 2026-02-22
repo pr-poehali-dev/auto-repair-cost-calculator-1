@@ -12,14 +12,70 @@ interface CartItem {
   workName: string;
   /** Нормативные часы из базы (не изменяются) */
   baseHours: number;
-  /** Фактически учитываемые часы с учётом вычета пересечений */
+  /** Фактически учитываемые часы (для главной = baseHours, для старых совместимых) */
   hours: number;
-  /** ID группы связей, к которой относится работа (если есть) */
+  /** ID группы связей (если есть) */
   linkGroupId?: string;
   /** Цвет группы */
   linkColor?: string;
-  /** Если true — это сопутствующая работа (её часы уже вычтены из главной) */
+  /** Если true — это сопутствующая работа (скрывается из основного списка) */
   isLinkedChild?: boolean;
+}
+
+/** Один уровень в иерархии цепочки работ */
+interface ChainStep {
+  workName: string;
+  baseHours: number;
+  /** Уникальные часы этого уровня = baseHours − baseHours следующего уровня (или baseHours если последний) */
+  uniqueHours: number;
+  color: string;
+  depth: number;
+}
+
+/** Построить цепочку от самой базовой работы до текущей (снизу вверх) */
+function buildChain(
+  workName: string,
+  links: ReturnType<typeof useAppData>["workLinks"],
+  works: { id: string; name: string; hours: number }[],
+  depth = 0,
+): ChainStep[] {
+  const group = links.find((g) => g.mainWorkName === workName);
+  if (!group) return [];
+
+  const firstLinked = group.linkedWorkNames[0];
+  const childWork = works.find((w) => w.name === firstLinked);
+
+  const myHours = works.find((w) => w.name === workName)?.hours ?? 0;
+  const childHours = childWork?.hours ?? 0;
+  const uniqueHours = childWork ? Math.max(0, myHours - childHours) : myHours;
+
+  const childChain = buildChain(firstLinked, links, works, depth + 1);
+
+  const meStep: ChainStep = {
+    workName,
+    baseHours: myHours,
+    uniqueHours,
+    color: group.color,
+    depth,
+  };
+
+  if (childChain.length > 0) {
+    return [...childChain, meStep];
+  }
+
+  if (childWork) {
+    const allLinked = group.linkedWorkNames.map((ln) => works.find((w) => w.name === ln)).filter(Boolean) as { id: string; name: string; hours: number }[];
+    const steps: ChainStep[] = allLinked.map((lw) => ({
+      workName: lw.name,
+      baseHours: lw.hours,
+      uniqueHours: lw.hours,
+      color: group.color,
+      depth: depth + 1,
+    }));
+    return [...steps, meStep];
+  }
+
+  return [];
 }
 
 const CONSUMABLES_PCT = 0.06;
@@ -60,37 +116,29 @@ function getApplicableLinks(
 }
 
 /**
- * Пересчитывает часы корзины с учётом групп связей.
+ * Пересчитывает корзину: главная работа хранит полные baseHours,
+ * сопутствующие помечаются isLinkedChild и скрываются из основного списка.
  */
-function recalcCart(rawCart: CartItem[], workLinks: ReturnType<typeof useAppData>["workLinks"], works: { id: string; name: string; hours: number }[]): CartItem[] {
+function recalcCart(rawCart: CartItem[], workLinks: ReturnType<typeof useAppData>["workLinks"], _works: { id: string; name: string; hours: number }[]): CartItem[] {
   return rawCart.map((item) => {
     const group = workLinks.find((g) => g.mainWorkName === item.workName);
-    if (!group) return { ...item, hours: item.baseHours, linkGroupId: undefined, linkColor: undefined, isLinkedChild: false };
-
-    // Это главная работа — считаем сколько часов надо вычесть
-    const linkedInCart = rawCart.filter(
-      (c) => c.workId !== item.workId && group.linkedWorkNames.includes(c.workName)
-    );
-    const deduction = linkedInCart.reduce((sum, c) => sum + c.baseHours, 0);
-    const adjustedHours = Math.max(0, item.baseHours - deduction);
-
-    return {
-      ...item,
-      hours: adjustedHours,
-      linkGroupId: group.id,
-      linkColor: group.color,
-      isLinkedChild: false,
-    };
-  }).map((item) => {
-    // Помечаем сопутствующие работы
+    if (group) {
+      return {
+        ...item,
+        hours: item.baseHours,
+        linkGroupId: group.id,
+        linkColor: group.color,
+        isLinkedChild: false,
+      };
+    }
     const parentGroup = workLinks.find(
       (g) => g.linkedWorkNames.includes(item.workName) &&
         rawCart.some((c) => c.workName === g.mainWorkName)
     );
     if (parentGroup) {
-      return { ...item, linkGroupId: parentGroup.id, linkColor: parentGroup.color, isLinkedChild: true };
+      return { ...item, hours: item.baseHours, linkGroupId: parentGroup.id, linkColor: parentGroup.color, isLinkedChild: true };
     }
-    return item;
+    return { ...item, hours: item.baseHours, linkGroupId: undefined, linkColor: undefined, isLinkedChild: false };
   });
 }
 
@@ -156,21 +204,18 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
     if (asChild) {
       return {
         type: "child",
-        text: `Группа «${asChild.label}»: работа связана с «${asChild.mainWorkName}». Часы главной работы будут уменьшены на ${selectedWork.hours} н/ч.`,
+        text: `Группа «${asChild.label}»: эта работа входит в норматив «${asChild.mainWorkName}» и уже включена в его часы. Добавлять отдельно не нужно.`,
         color: asChild.color,
       };
     }
     return null;
   }, [selectedWork, applicableLinks, rawCart]);
 
-  const totalHours = cart.reduce((s, c) => s + c.hours, 0);
+  const totalHours = cart.filter((c) => !c.isLinkedChild).reduce((s, c) => s + c.hours, 0);
   const totalCost = totalHours * ratePerHour;
   const totalCostMarkup = totalCost * 1.2;
   const consumablesCost = Math.round(totalCost * CONSUMABLES_PCT);
   const consumablesMarkup = Math.round(totalCostMarkup * CONSUMABLES_PCT);
-
-  // Есть ли в корзине работы с пересечениями
-  const hasLinkedItems = cart.some((c) => c.linkGroupId);
 
   const handleBranchChange = (v: string) => {
     setBranchId(v); setRawCart([]); setShowResult(false); setHiding(false);
@@ -360,13 +405,10 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                         <span className="text-xs text-muted-foreground">Итого: <strong>{totalHours.toFixed(1)} н/ч</strong></span>
                       </div>
                       {cart.filter((item) => !item.isLinkedChild).map((item, i) => {
-                        const group = applicableLinks.find((g) => g.mainWorkName === item.workName);
-                        const linkedItems = group
-                          ? works.filter((w) => group.linkedWorkNames.includes(w.name))
-                          : [];
+                        const chain = buildChain(item.workName, applicableLinks, works);
                         return (
                           <div key={item.workId} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
-                            {/* Строка главной работы */}
+                            {/* Главная работа */}
                             <div className="flex items-center gap-3 px-4 py-3"
                               style={item.linkColor ? { borderLeft: `3px solid ${item.linkColor}` } : {}}>
                               {item.linkGroupId ? (
@@ -378,38 +420,54 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                                 <Icon name="Wrench" size={13} className="text-muted-foreground shrink-0" />
                               )}
                               <span className="flex-1 text-sm font-medium text-foreground">{item.workName}</span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {item.hours !== item.baseHours ? (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-xs text-muted-foreground line-through">{item.baseHours}</span>
-                                    <span className="text-sm font-semibold" style={{ color: item.linkColor }}>{item.hours} н/ч</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-sm font-semibold text-[hsl(215,70%,22%)] shrink-0">{item.hours} н/ч</span>
-                                )}
-                              </div>
+                              <span className="text-sm font-bold text-[hsl(215,70%,22%)] shrink-0">{item.baseHours} н/ч</span>
                               <span className="text-sm text-muted-foreground shrink-0 w-28 text-right">
-                                {(item.hours * ratePerHour).toLocaleString("ru-RU")} ₽
+                                {(item.baseHours * ratePerHour).toLocaleString("ru-RU")} ₽
                               </span>
                               <button onClick={() => handleRemoveWork(item.workId)}
                                 className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0">
                                 <Icon name="X" size={14} />
                               </button>
                             </div>
-                            {/* Детализация сопутствующих работ */}
-                            {linkedItems.length > 0 && (
-                              <div className="pb-2" style={{ borderLeft: `3px solid ${item.linkColor}` }}>
-                                <div className="px-4 pt-0.5 pb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                                  <Icon name="CornerDownRight" size={11} />
-                                  <span style={{ color: item.linkColor }}>Включено в норматив:</span>
+                            {/* Иерархия снизу вверх */}
+                            {chain.length > 0 && (
+                              <div className="pb-2 mx-4 mb-1 border border-border/60 rounded-md bg-gray-50/60 overflow-hidden">
+                                <div className="px-3 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground border-b border-border/40 bg-gray-100/60">
+                                  <Icon name="ListOrdered" size={11} />
+                                  <span>Очерёдность работ (снизу вверх):</span>
                                 </div>
-                                {linkedItems.map((lw) => (
-                                  <div key={lw.id} className="flex items-center gap-3 px-4 py-1.5 ml-4">
-                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.linkColor }} />
-                                    <span className="flex-1 text-xs text-muted-foreground">{lw.name}</span>
-                                    <span className="text-xs font-medium shrink-0" style={{ color: item.linkColor }}>{lw.hours} н/ч</span>
-                                  </div>
-                                ))}
+                                {chain.map((step, si) => {
+                                  const isLast = si === chain.length - 1;
+                                  return (
+                                    <div key={step.workName}
+                                      className={`flex items-center gap-2 px-3 py-2 ${si < chain.length - 1 ? "border-b border-border/30" : ""}`}
+                                      style={{ paddingLeft: `${12 + step.depth * 0}px` }}>
+                                      <div className="flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground w-5">
+                                        {isLast ? (
+                                          <Icon name="Flag" size={11} style={{ color: item.linkColor } as React.CSSProperties} />
+                                        ) : (
+                                          <Icon name="ArrowUp" size={10} className="text-muted-foreground/50" />
+                                        )}
+                                      </div>
+                                      <span className={`flex-1 text-xs ${isLast ? "font-semibold" : "text-muted-foreground"}`}
+                                        style={isLast ? { color: item.linkColor } : {}}>
+                                        {step.workName}
+                                      </span>
+                                      <span className="text-xs font-medium shrink-0 tabular-nums"
+                                        style={{ color: item.linkColor }}>
+                                        {step.uniqueHours.toFixed(1)} н/ч
+                                      </span>
+                                      {si < chain.length - 1 && (
+                                        <Icon name="ChevronRight" size={10} className="text-muted-foreground/40 shrink-0" />
+                                      )}
+                                      {isLast && (
+                                        <span className="text-xs font-bold shrink-0 text-[hsl(215,70%,22%)]">
+                                          = {step.baseHours.toFixed(1)} н/ч
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -429,7 +487,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                 <button onClick={handleCalculate} disabled={rawCart.length === 0}
                   className="flex items-center gap-2 px-6 py-2.5 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
                   <Icon name="Calculator" size={16} />
-                  Рассчитать стоимость {rawCart.length > 0 && `(${rawCart.length} работ)`}
+                  Рассчитать стоимость {cart.filter((c) => !c.isLinkedChild).length > 0 && `(${cart.filter((c) => !c.isLinkedChild).length} работ)`}
                 </button>
                 {rawCart.length > 0 && (
                   <button onClick={handleReset}
@@ -489,51 +547,51 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                   <span className="text-right">Цены с запчастями клиента</span>
                 </div>
                 {cart.filter((item) => !item.isLinkedChild).map((item, i) => {
-                  const group = applicableLinks.find((g) => g.mainWorkName === item.workName);
-                  const linkedItems = group
-                    ? works.filter((w) => group.linkedWorkNames.includes(w.name))
-                    : [];
+                  const chain = buildChain(item.workName, applicableLinks, works);
                   return (
                     <div key={item.workId} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      {/* Строка главной работы */}
                       <div className="px-4 py-3 grid gap-2 text-sm"
                         style={{ gridTemplateColumns: "1fr 80px 1fr 1fr", ...(item.linkColor ? { borderLeft: `3px solid ${item.linkColor}` } : {}) }}>
-                        <span className="text-foreground flex items-center gap-1.5">
+                        <span className="text-foreground flex items-center gap-1.5 font-medium">
                           {item.linkGroupId && (
                             <span className="w-2 h-2 rounded-full shrink-0 inline-block" style={{ background: item.linkColor }} />
                           )}
                           {item.workName}
                         </span>
-                        <div className="text-center">
-                          {item.hours !== item.baseHours ? (
-                            <div className="flex flex-col items-center">
-                              <span className="text-xs text-muted-foreground line-through">{item.baseHours}</span>
-                              <span className="font-semibold" style={{ color: item.linkColor }}>{item.hours}</span>
-                            </div>
-                          ) : (
-                            <span className="font-semibold text-[hsl(215,70%,22%)]">{item.hours}</span>
-                          )}
-                        </div>
-                        <span className="text-right text-green-700 font-medium">{(item.hours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
-                        <span className="text-right text-orange-600 font-medium">{(item.hours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
+                        <span className="text-center font-bold text-[hsl(215,70%,22%)]">{item.baseHours.toFixed(1)}</span>
+                        <span className="text-right text-green-700 font-medium">{(item.baseHours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
+                        <span className="text-right text-orange-600 font-medium">{(item.baseHours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
                       </div>
-                      {linkedItems.length > 0 && (
-                        <div className="pb-2" style={{ borderLeft: `3px solid ${item.linkColor}` }}>
-                          <div className="px-4 pt-0 pb-1 flex items-center gap-1.5 text-xs" style={{ color: item.linkColor }}>
-                            <Icon name="CornerDownRight" size={11} />
-                            <span>Включено в норматив:</span>
+                      {/* Иерархия снизу вверх */}
+                      {chain.length > 0 && (
+                        <div className="mx-4 mb-2 border border-border/50 rounded overflow-hidden bg-gray-50/70"
+                          style={{ borderLeft: `3px solid ${item.linkColor}` }}>
+                          <div className="px-3 py-1 text-xs text-muted-foreground bg-gray-100/70 border-b border-border/30 flex items-center gap-1.5">
+                            <Icon name="ListOrdered" size={10} />
+                            Очерёдность работ (снизу вверх):
                           </div>
-                          {linkedItems.map((lw) => (
-                            <div key={lw.id} className="px-4 py-1 ml-4 grid gap-2 text-xs text-muted-foreground"
-                              style={{ gridTemplateColumns: "1fr 80px 1fr 1fr" }}>
-                              <span className="flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.linkColor }} />
-                                {lw.name}
-                              </span>
-                              <span className="text-center font-medium" style={{ color: item.linkColor }}>{lw.hours}</span>
-                              <span className="text-right text-muted-foreground">{(lw.hours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
-                              <span className="text-right text-muted-foreground">{(lw.hours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
-                            </div>
-                          ))}
+                          {chain.map((step, si) => {
+                            const isLast = si === chain.length - 1;
+                            return (
+                              <div key={step.workName}
+                                className={`grid gap-2 px-3 py-1.5 text-xs ${si < chain.length - 1 ? "border-b border-border/20" : ""}`}
+                                style={{ gridTemplateColumns: "1fr 80px 1fr 1fr" }}>
+                                <span className={`flex items-center gap-1.5 ${isLast ? "font-semibold" : "text-muted-foreground"}`}
+                                  style={isLast ? { color: item.linkColor } : {}}>
+                                  <Icon name={isLast ? "Flag" : "ArrowUp"} size={9}
+                                    style={isLast ? { color: item.linkColor } as React.CSSProperties : {}} className={isLast ? "" : "text-muted-foreground/40"} />
+                                  {step.workName}
+                                  {isLast && <span className="font-bold text-[hsl(215,70%,22%)] ml-1">= {step.baseHours.toFixed(1)} н/ч</span>}
+                                </span>
+                                <span className="text-center font-medium tabular-nums" style={{ color: item.linkColor }}>
+                                  {step.uniqueHours.toFixed(1)}
+                                </span>
+                                <span className="text-right text-muted-foreground">{(step.uniqueHours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
+                                <span className="text-right text-muted-foreground">{(step.uniqueHours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
