@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
-import { CAR_DATABASE, SPARE_PARTS, SparePartWork } from "@/data/carDatabase";
+import { SparePartWork } from "@/data/carDatabase";
+import { useAppData } from "@/pages/Index";
 import Icon from "@/components/ui/icon";
 import { HistoryItem } from "@/pages/Index";
 
@@ -46,25 +47,20 @@ const SelectBox = ({
 );
 
 const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
+  const { carDatabase, spareParts } = useAppData();
+
   const [brandId, setBrandId] = useState("");
   const [modelId, setModelId] = useState("");
   const [generationId, setGenerationId] = useState("");
   const [modificationId, setModificationId] = useState("");
-  const [partCategory, setPartCategory] = useState("");
   const [partId, setPartId] = useState("");
   const [result, setResult] = useState<SparePartWork | null>(null);
   const [calculated, setCalculated] = useState(false);
 
-  const brand = useMemo(() => CAR_DATABASE.find((b) => b.id === brandId), [brandId]);
+  const brand = useMemo(() => carDatabase.find((b) => b.id === brandId), [carDatabase, brandId]);
   const model = useMemo(() => brand?.models.find((m) => m.id === modelId), [brand, modelId]);
   const generation = useMemo(() => model?.generations.find((g) => g.id === generationId), [model, generationId]);
   const modification = useMemo(() => generation?.modifications.find((m) => m.id === modificationId), [generation, modificationId]);
-
-  const categories = useMemo(() => [...new Set(SPARE_PARTS.map((p) => p.category))], []);
-  const partsInCategory = useMemo(
-    () => SPARE_PARTS.filter((p) => p.category === partCategory),
-    [partCategory]
-  );
 
   const handleBrandChange = (v: string) => {
     setBrandId(v); setModelId(""); setGenerationId(""); setModificationId("");
@@ -78,15 +74,11 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
     setGenerationId(v); setModificationId("");
     setCalculated(false); setResult(null);
   };
-  const handleCategoryChange = (v: string) => {
-    setPartCategory(v); setPartId("");
-    setCalculated(false); setResult(null);
-  };
 
   const canCalculate = brandId && modelId && generationId && modificationId && partId;
 
   const handleCalculate = () => {
-    const part = SPARE_PARTS.find((p) => p.id === partId);
+    const part = spareParts.find((p) => p.id === partId);
     if (!part || !brand || !model || !generation || !modification) return;
     setResult(part);
     setCalculated(true);
@@ -107,7 +99,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
 
   const handleReset = () => {
     setBrandId(""); setModelId(""); setGenerationId(""); setModificationId("");
-    setPartCategory(""); setPartId(""); setResult(null); setCalculated(false);
+    setPartId(""); setResult(null); setCalculated(false);
   };
 
   const costWithParts = result ? result.hours * ratePerHour : 0;
@@ -131,7 +123,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
             label="Марка"
             value={brandId}
             onChange={handleBrandChange}
-            options={CAR_DATABASE.map((b) => ({ id: b.id, label: b.name }))}
+            options={carDatabase.map((b) => ({ id: b.id, label: b.name }))}
             placeholder="— Выберите марку —"
           />
           <SelectBox
@@ -160,7 +152,6 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
           />
         </div>
 
-        {/* Modification details */}
         {modification && (
           <div className="mx-6 mb-6 p-4 bg-blue-50 border border-blue-100 rounded-md flex flex-wrap gap-6 animate-fade-in">
             <div className="flex items-center gap-2">
@@ -182,28 +173,27 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
         )}
       </div>
 
-      {/* Part selection */}
+      {/* Part selection — single dropdown, no category */}
       <div className="bg-white rounded-lg border border-border shadow-sm">
         <div className="px-6 py-4 border-b border-border flex items-center gap-2">
           <Icon name="Wrench" size={18} className="text-[hsl(215,70%,22%)]" />
           <h3 className="font-semibold text-sm uppercase tracking-wider text-foreground">Выбор работы</h3>
         </div>
-        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <SelectBox
-            label="Категория"
-            value={partCategory}
-            onChange={handleCategoryChange}
-            options={categories.map((c) => ({ id: c, label: c }))}
-            placeholder="— Выберите категорию —"
-          />
-          <SelectBox
-            label="Наименование работы"
-            value={partId}
-            onChange={(v) => { setPartId(v); setCalculated(false); setResult(null); }}
-            options={partsInCategory.map((p) => ({ id: p.id, label: p.name }))}
-            placeholder="— Выберите работу —"
-            disabled={!partCategory}
-          />
+        <div className="p-6">
+          {spareParts.length === 0 ? (
+            <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
+              <Icon name="AlertTriangle" size={16} className="shrink-0" />
+              <span>База работ пуста. Загрузите Excel-файл в панели администратора.</span>
+            </div>
+          ) : (
+            <SelectBox
+              label="Наименование работы"
+              value={partId}
+              onChange={(v) => { setPartId(v); setCalculated(false); setResult(null); }}
+              options={spareParts.map((p) => ({ id: p.id, label: p.name }))}
+              placeholder="— Выберите работу —"
+            />
+          )}
         </div>
         <div className="px-6 pb-6 flex gap-3">
           <button
@@ -239,7 +229,6 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
               <h3 className="font-semibold text-sm uppercase tracking-wider text-white">Результат расчёта</h3>
             </div>
             <div className="p-6">
-              {/* Car info */}
               <div className="mb-5 pb-5 border-b border-border">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Автомобиль</p>
                 <p className="font-semibold text-foreground">
@@ -251,7 +240,6 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
                 <p className="font-semibold text-foreground">{result.name}</p>
               </div>
 
-              {/* Hours */}
               <div className="mb-6 inline-flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-md px-5 py-3">
                 <Icon name="Clock" size={20} className="text-[hsl(215,70%,22%)]" />
                 <div>
@@ -260,14 +248,11 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
                 </div>
               </div>
 
-              {/* Price cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-5">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-green-700 mb-1">
-                        Со своими запчастями
-                      </p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-green-700 mb-1">Со своими запчастями</p>
                       <p className="text-xs text-green-600">Клиент использует запчасти автотехцентра</p>
                     </div>
                     <Icon name="Package" size={18} className="text-green-600 mt-0.5" />
@@ -283,9 +268,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-5">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-700 mb-1">
-                        С наценкой +20%
-                      </p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-700 mb-1">С наценкой +20%</p>
                       <p className="text-xs text-orange-600">Клиент использует сторонние запчасти</p>
                     </div>
                     <Icon name="TrendingUp" size={18} className="text-orange-600 mt-0.5" />
@@ -301,7 +284,9 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
 
               <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
                 <Icon name="Info" size={13} />
-                <span>Базовая ставка нормачаса: <strong>{ratePerHour.toLocaleString("ru-RU")} ₽</strong> · Расчёт выполнен и сохранён в истории</span>
+                <span>
+                  Базовая ставка: <strong>{ratePerHour.toLocaleString("ru-RU")} ₽/н.ч</strong> · Расчёт сохранён в истории
+                </span>
               </div>
             </div>
           </div>
