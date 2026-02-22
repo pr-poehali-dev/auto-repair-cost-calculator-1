@@ -7,83 +7,9 @@ export interface Work {
 export interface Modification {
   id: string;
   name: string;
-  // Кузов
-  bodyType?: string;
-  seats?: string;
-  lengthMm?: string;
-  widthMm?: string;
-  heightMm?: string;
-  wheelbaseMm?: string;
-  trackFrontMm?: string;
-  trackRearMm?: string;
-  curbWeightKg?: string;
-  wheelSize?: string;
-  groundClearanceMm?: string;
-  trunkMaxL?: string;
-  trunkMinL?: string;
-  grossWeightKg?: string;
-  diskSize?: string;
-  clearanceMm?: string;
-  trackFrontWidthMm?: string;
-  trackRearWidthMm?: string;
-  payloadKg?: string;
-  trainWeightKg?: string;
-  axleLoadKg?: string;
-  loadingHeightMm?: string;
-  cargoCompartmentDims?: string;
-  cargoVolumeM3?: string;
-  boltPattern?: string;
-  // Двигатель
   engine: string;
-  engineType?: string;
-  engineVolumeCC?: string;
-  power: string;
-  powerRpm?: string;
-  torqueNm?: string;
-  intakeType?: string;
-  cylinderLayout?: string;
-  cylinderCount?: string;
-  compressionRatio?: string;
-  valvesPerCylinder?: string;
-  turboType?: string;
-  boreMm?: string;
-  strokeMm?: string;
-  engineModel?: string;
-  engineLocation?: string;
-  powerKw?: string;
-  torqueRpm?: string;
-  intercooler?: string;
-  engineCode?: string;
-  timingSystem?: string;
-  fuelConsumptionMethod?: string;
-  // Трансмиссия
   transmission: string;
-  gearCount?: string;
-  driveType?: string;
-  turningDiameterM?: string;
-  // Эксплуатация
-  fuelType?: string;
-  maxSpeedKmh?: string;
-  acceleration100?: string;
-  fuelTankL?: string;
-  ecoStandard?: string;
-  fuelCityL?: string;
-  fuelHighwayL?: string;
-  fuelMixedL?: string;
-  rangeKm?: string;
-  co2GKm?: string;
-  // Тормоза и подвеска
-  frontBrakes?: string;
-  rearBrakes?: string;
-  frontSuspension?: string;
-  rearSuspension?: string;
-  // Прочее
-  doorsCount?: string;
-  countryOfOrigin?: string;
-  vehicleClass?: string;
-  steeringPosition?: string;
-  safetyRating?: string;
-  safetyRatingName?: string;
+  power: string;
   works: Work[];
 }
 
