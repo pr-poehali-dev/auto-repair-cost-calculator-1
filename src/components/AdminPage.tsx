@@ -13,10 +13,50 @@ interface Props {
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
+// Шаблон для Шага 1 (база авто)
+function downloadCarsTemplate() {
+  const headers = ["Марка", "Модель", "Поколение", "Годы от", "Годы до", "Серия", "Модификация", "Двигатель", "КПП", "Мощность"];
+  const example = [
+    ["Toyota", "Camry", "VII (V70)", "2017", "н.в.", "SE", "2.5 AT", "2.5 бензин (181 л.с.)", "Автомат", "181 л.с."],
+    ["Toyota", "Camry", "VII (V70)", "2017", "н.в.", "SE", "3.5 AT", "3.5 бензин (249 л.с.)", "Автомат", "249 л.с."],
+    ["Toyota", "Camry", "VI (V50)", "2011", "2017", "Classic", "2.5 AT", "2.5 бензин (181 л.с.)", "Автомат", "181 л.с."],
+    ["BMW", "3 Series", "G20", "2018", "н.в.", "", "320i AT", "2.0 бензин (184 л.с.)", "Автомат", "184 л.с."],
+    ["BMW", "3 Series", "G20", "2018", "н.в.", "", "320d AT", "2.0 дизель (190 л.с.)", "Автомат", "190 л.с."],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...example]);
+  ws["!cols"] = [12, 12, 14, 10, 10, 12, 14, 22, 12, 12].map((w) => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "База авто");
+  XLSX.writeFile(wb, "шаблон_база_авто.xlsx");
+}
+
+// Шаблон для Шага 2 (список работ)
+function downloadWorksTemplate() {
+  const headers = ["Наименование работы"];
+  const example = [
+    ["Замена масла двигателя"],
+    ["Замена тормозных колодок передних"],
+    ["Замена тормозных колодок задних"],
+    ["Замена воздушного фильтра"],
+    ["Замена салонного фильтра"],
+    ["Замена свечей зажигания"],
+    ["Замена ремня / цепи ГРМ"],
+    ["Замена амортизаторов передних"],
+    ["Замена рычага подвески"],
+    ["Замена сцепления"],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...example]);
+  ws["!cols"] = [{ wch: 40 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Список работ");
+  XLSX.writeFile(wb, "шаблон_список_работ.xlsx");
+}
+
+// Парсинг базы авто (новый формат: Годы от / Годы до / Серия)
 function parseCarBase(rows: Record<string, unknown>[]): CarBrand[] | null {
   if (rows.length === 0) return null;
   const keys = Object.keys(rows[0]);
-  if (keys.length < 5) return null;
+  if (keys.length < 7) return null;
   const get = (row: Record<string, unknown>, i: number) =>
     String(row[keys[i]] ?? "").trim();
 
@@ -24,18 +64,24 @@ function parseCarBase(rows: Record<string, unknown>[]): CarBrand[] | null {
   rows.forEach((row) => {
     const brandName = get(row, 0);
     const modelName = get(row, 1);
-    const genName = get(row, 2);
-    const years = get(row, 3);
-    const modName = get(row, 4);
-    const engine = get(row, 5) || modName;
-    const transmission = get(row, 6) || "—";
-    const power = get(row, 7) || "—";
+    const genName   = get(row, 2);
+    const yearsFrom = get(row, 3);
+    const yearsTo   = get(row, 4);
+    const series    = get(row, 5);
+    const modName   = get(row, 6);
+    const engine    = get(row, 7) || modName;
+    const transmission = get(row, 8) || "—";
+    const power     = get(row, 9) || "—";
+
     if (!brandName || !modelName || !modName) return;
+
+    const years = yearsTo ? `${yearsFrom} — ${yearsTo}` : yearsFrom;
+    const genLabel = series ? `${genName} ${series}`.trim() : genName;
 
     const brandId = brandName.toLowerCase().replace(/\s+/g, "-");
     const modelId = `${brandId}__${modelName.toLowerCase().replace(/\s+/g, "-")}`;
-    const genId = `${modelId}__${genName.toLowerCase().replace(/\s+/g, "-")}`;
-    const modId = `${genId}__${modName.toLowerCase().replace(/\s+/g, "-")}`;
+    const genId   = `${modelId}__${genLabel.toLowerCase().replace(/[\s()]/g, "-")}`;
+    const modId   = `${genId}__${modName.toLowerCase().replace(/\s+/g, "-")}`;
 
     if (!brandsMap.has(brandId)) brandsMap.set(brandId, { id: brandId, name: brandName, models: [] });
     const brand = brandsMap.get(brandId)!;
@@ -44,7 +90,7 @@ function parseCarBase(rows: Record<string, unknown>[]): CarBrand[] | null {
     if (!model) { model = { id: modelId, name: modelName, generations: [] }; brand.models.push(model); }
 
     let gen = model.generations.find((g) => g.id === genId);
-    if (!gen) { gen = { id: genId, name: genName || modName, years, modifications: [] }; model.generations.push(gen); }
+    if (!gen) { gen = { id: genId, name: genLabel || modName, years, modifications: [] }; model.generations.push(gen); }
 
     if (!gen.modifications.find((m) => m.id === modId)) {
       gen.modifications.push({ id: modId, name: modName, engine, transmission, power, works: [] });
@@ -62,8 +108,8 @@ function parseWorksList(rows: Record<string, unknown>[]): WorkEntry[] | null {
   return works.length > 0 ? works : null;
 }
 
-// Генерирует шаблон: строка на каждую пару (модификация × работа), нормачасы пустые
-function generateTemplate(cars: CarBrand[], works: WorkEntry[]): void {
+// Шаблон для Шага 3: авто × работы, столбец Нормачасы пустой
+function generateNormsTemplate(cars: CarBrand[], works: WorkEntry[]): void {
   const headers = ["Марка", "Модель", "Поколение", "Годы", "Модификация", "Двигатель", "КПП", "Мощность", "Работа", "Нормачасы"];
   const rows: (string | number)[][] = [];
 
@@ -82,7 +128,7 @@ function generateTemplate(cars: CarBrand[], works: WorkEntry[]): void {
               wIdx === 0 ? mod.transmission : "",
               wIdx === 0 ? mod.power : "",
               work.name,
-              "", // нормачасы — заполняет пользователь
+              "",
             ]);
           });
         });
@@ -92,19 +138,12 @@ function generateTemplate(cars: CarBrand[], works: WorkEntry[]): void {
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   ws["!cols"] = [14, 14, 14, 14, 16, 22, 14, 12, 36, 12].map((w) => ({ wch: w }));
-
-  // Подсвечиваем столбец Нормачасы (J) жёлтым
-  rows.forEach((_, i) => {
-    const cell = `J${i + 2}`;
-    if (!ws[cell]) ws[cell] = { t: "s", v: "" };
-  });
-
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Нормачасы");
   XLSX.writeFile(wb, "шаблон_нормачасов_заполнить.xlsx");
 }
 
-// Парсит заполненный шаблон → обновляет works[] у каждой модификации
+// Парсит заполненный шаблон нормативов → works[] для каждой модификации
 function parseFilledTemplate(
   rows: Record<string, unknown>[],
   cars: CarBrand[]
@@ -115,43 +154,39 @@ function parseFilledTemplate(
   const get = (row: Record<string, unknown>, i: number) =>
     String(row[keys[i]] ?? "").trim();
 
-  // Строим быстрый lookup modId → works[]
   interface WorkAccum { modId: string; works: Work[] }
   const modMap = new Map<string, WorkAccum>();
 
-  // Сначала сканируем строки, накапливаем текущие brand/model/gen/mod по "последнему непустому"
-  let curBrand = "", curModel = "", curGen = "", curYears = "", curMod = "";
+  let curBrand = "", curModel = "", curGen = "", curMod = "";
   let curEngine = "", curTransmission = "", curPower = "";
 
   rows.forEach((row, i) => {
-    const brandName = get(row, 0) || curBrand;
-    const modelName = get(row, 1) || curModel;
-    const genName = get(row, 2) || curGen;
-    const years = get(row, 3) || curYears;
-    const modName = get(row, 4) || curMod;
-    const engine = get(row, 5) || curEngine;
+    const brandName    = get(row, 0) || curBrand;
+    const modelName    = get(row, 1) || curModel;
+    const genName      = get(row, 2) || curGen;
+    const modName      = get(row, 4) || curMod;
+    const engine       = get(row, 5) || curEngine;
     const transmission = get(row, 6) || curTransmission;
-    const power = get(row, 7) || curPower;
-    const workName = get(row, 8);
-    const hoursRaw = get(row, 9).replace(",", ".");
-    const hours = parseFloat(hoursRaw);
+    const power        = get(row, 7) || curPower;
+    const workName     = get(row, 8);
+    const hoursRaw     = get(row, 9).replace(",", ".");
+    const hours        = parseFloat(hoursRaw);
 
-    curBrand = brandName; curModel = modelName; curGen = genName; curYears = years;
+    curBrand = brandName; curModel = modelName; curGen = genName;
     curMod = modName; curEngine = engine; curTransmission = transmission; curPower = power;
 
     if (!brandName || !modelName || !modName || !workName || isNaN(hours) || hours <= 0) return;
 
     const brandId = brandName.toLowerCase().replace(/\s+/g, "-");
     const modelId = `${brandId}__${modelName.toLowerCase().replace(/\s+/g, "-")}`;
-    const genId = `${modelId}__${genName.toLowerCase().replace(/\s+/g, "-")}`;
-    const modId = `${genId}__${modName.toLowerCase().replace(/\s+/g, "-")}`;
+    const genId   = `${modelId}__${genName.toLowerCase().replace(/[\s()]/g, "-")}`;
+    const modId   = `${genId}__${modName.toLowerCase().replace(/\s+/g, "-")}`;
 
     if (!modMap.has(modId)) modMap.set(modId, { modId, works: [] });
     modMap.get(modId)!.works.push({ id: `w-${modId}-${i}`, name: workName, hours });
   });
 
   let totalFilled = 0;
-
   const updatedCars = cars.map((brand) => ({
     ...brand,
     models: brand.models.map((model) => ({
@@ -191,16 +226,27 @@ const StepBadge = ({ n, active, done, label }: { n: number; active: boolean; don
 // ─── Upload block ────────────────────────────────────────────────────────────
 
 const UploadBlock = ({
-  title, description, buttonLabel, accept, onFile, status, disabled, children,
+  title, description, buttonLabel, accept, onFile, onDownloadTemplate, status, disabled, children,
 }: {
   title: string; description: string; buttonLabel: string; accept: string;
-  onFile: (file: File) => void; status: { type: "success" | "error"; msg: string } | null;
+  onFile: (file: File) => void;
+  onDownloadTemplate: () => void;
+  status: { type: "success" | "error"; msg: string } | null;
   disabled?: boolean; children?: React.ReactNode;
 }) => {
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className={`border rounded-lg p-5 transition-colors ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : "bg-white border-border"}`}>
-      <p className="font-semibold text-sm text-foreground mb-1">{title}</p>
+      <div className="flex items-start justify-between mb-1 gap-3">
+        <p className="font-semibold text-sm text-foreground">{title}</p>
+        <button
+          onClick={onDownloadTemplate}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-[hsl(215,70%,22%)] text-[hsl(215,70%,22%)] rounded text-xs font-semibold hover:bg-blue-50 transition-all shrink-0"
+        >
+          <Icon name="Download" size={13} />
+          Скачать шаблон
+        </button>
+      </div>
       <p className="text-xs text-muted-foreground mb-4">{description}</p>
       {children}
       {status && (
@@ -229,22 +275,18 @@ const UploadBlock = ({
 const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase } = useAppData();
 
-  // Auth
   const [authenticated, setAuthenticated] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [codeError, setCodeError] = useState(false);
 
-  // Rate
   const [inputValue, setInputValue] = useState(ratePerHour.toString());
   const [rateSaved, setRateSaved] = useState(false);
   const [rateError, setRateError] = useState("");
 
-  // Wizard state
   const [carsStatus, setCarsStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [filledStatus, setFilledStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
-  // Локальные данные мастера (до финального сохранения)
   const [pendingCars, setPendingCars] = useState<CarBrand[] | null>(null);
   const [pendingWorks, setPendingWorks] = useState<WorkEntry[] | null>(null);
   const [dbReady, setDbReady] = useState(false);
@@ -263,7 +305,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setTimeout(() => setRateSaved(false), 3000);
   };
 
-  // Шаг 1 — загрузка базы авто
   const handleCarsFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -273,7 +314,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
         const cars = parseCarBase(rows);
         if (!cars || cars.length === 0) {
-          setCarsStatus({ type: "error", msg: "Не удалось распознать автомобили. Проверьте формат: Марка | Модель | Поколение | Годы | Модификация ..." });
+          setCarsStatus({ type: "error", msg: "Не удалось распознать автомобили. Скачайте шаблон и проверьте формат." });
         } else {
           const totalMods = cars.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
           setPendingCars(cars);
@@ -284,7 +325,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     reader.readAsArrayBuffer(file);
   };
 
-  // Шаг 2 — загрузка списка работ
   const handleWorksFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -294,7 +334,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
         const works = parseWorksList(rows);
         if (!works) {
-          setWorksStatus({ type: "error", msg: "Файл пустой или не содержит работ. Нужен один столбец с названиями работ." });
+          setWorksStatus({ type: "error", msg: "Файл пустой или не содержит работ. Скачайте шаблон и проверьте формат." });
         } else {
           setPendingWorks(works);
           setWorksDatabase(works);
@@ -305,14 +345,12 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     reader.readAsArrayBuffer(file);
   };
 
-  // Скачать шаблон (после загрузки авто + работ)
-  const handleDownloadTemplate = () => {
+  const handleDownloadNormsTemplate = () => {
     const cars = pendingCars ?? carDatabase;
     const works = pendingWorks ?? worksDatabase;
-    generateTemplate(cars, works);
+    generateNormsTemplate(cars, works);
   };
 
-  // Шаг 3 — загрузка заполненного шаблона
   const handleFilledFile = (file: File) => {
     const cars = pendingCars ?? carDatabase;
     const reader = new FileReader();
@@ -324,7 +362,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         if (rows.length === 0) { setFilledStatus({ type: "error", msg: "Файл пустой." }); return; }
         const { updatedCars, totalFilled } = parseFilledTemplate(rows, cars);
         if (totalFilled === 0) {
-          setFilledStatus({ type: "error", msg: "Нормачасы не найдены. Убедитесь, что столбец J заполнен числами." });
+          setFilledStatus({ type: "error", msg: "Нормачасы не найдены. Убедитесь, что столбец J «Нормачасы» заполнен числами." });
         } else {
           setCarDatabase(updatedCars);
           if (pendingCars) setPendingCars(updatedCars);
@@ -336,15 +374,11 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     reader.readAsArrayBuffer(file);
   };
 
-  const carsReady = !!pendingCars || carDatabase.length > 0;
-  const worksReady = !!pendingWorks || worksDatabase.length > 0;
-  const templateReady = carsReady && worksReady;
-
   const step1Done = !!pendingCars;
   const step2Done = !!pendingWorks;
   const step3Done = dbReady;
+  const templateReady = (!!pendingCars || carDatabase.length > 0) && (!!pendingWorks || worksDatabase.length > 0);
 
-  // Статистика
   const totalMods = carDatabase.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
   const totalWorks = carDatabase.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + mod.works.length, 0), 0), 0), 0);
 
@@ -454,7 +488,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
             <Icon name="ChevronRight" size={16} className="text-muted-foreground hidden sm:block" />
             <StepBadge n={2} active={step1Done && !step2Done} done={step2Done} label="Список работ" />
             <Icon name="ChevronRight" size={16} className="text-muted-foreground hidden sm:block" />
-            <StepBadge n={3} active={step2Done && !step3Done} done={step3Done} label="Нормативы (шаблон)" />
+            <StepBadge n={3} active={step2Done && !step3Done} done={step3Done} label="Нормативы" />
           </div>
 
           <div className="border-t border-border pt-5 space-y-4">
@@ -462,26 +496,27 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
             {/* Step 1 — Cars */}
             <UploadBlock
               title="Шаг 1 — Загрузите базу автомобилей"
-              description="Файл со столбцами: Марка | Модель | Поколение | Годы | Модификация | Двигатель (необяз.) | КПП (необяз.) | Мощность (необяз.). Каждая строка — одна модификация."
+              description="Каждая строка — одна модификация. Столбцы: Марка | Модель | Поколение | Годы от | Годы до | Серия | Модификация | Двигатель | КПП | Мощность"
               buttonLabel="Загрузить базу авто (.xlsx)"
               accept=".xlsx,.xls"
               onFile={handleCarsFile}
+              onDownloadTemplate={downloadCarsTemplate}
               status={carsStatus}
             >
               <div className="overflow-x-auto rounded border border-border mb-4">
                 <table className="text-xs w-full border-collapse">
                   <thead>
                     <tr className="bg-[hsl(215,70%,22%)] text-white">
-                      {["Марка","Модель","Поколение","Годы","Модификация","Двигатель","КПП","Мощность"].map((h) => (
+                      {["Марка","Модель","Поколение","Годы от","Годы до","Серия","Модификация","Двигатель","КПП","Мощность"].map((h) => (
                         <th key={h} className="px-2 py-1.5 text-center whitespace-nowrap border-r border-blue-800 last:border-0">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {[
-                      ["Toyota","Camry","V70","2017-н.в.","2.5 AT","2.5 бенз.","Автомат","181 л.с."],
-                      ["Toyota","Camry","V70","2017-н.в.","3.5 AT","3.5 бенз.","Автомат","249 л.с."],
-                      ["BMW","3 Series","G20","2018-н.в.","320i AT","2.0 бенз.","Автомат","184 л.с."],
+                      ["Toyota","Camry","VII (V70)","2017","н.в.","SE","2.5 AT","2.5 бенз.","Автомат","181 л.с."],
+                      ["Toyota","Camry","VII (V70)","2017","н.в.","SE","3.5 AT","3.5 бенз.","Автомат","249 л.с."],
+                      ["BMW","3 Series","G20","2018","н.в.","","320i AT","2.0 бенз.","Автомат","184 л.с."],
                     ].map((row, i) => (
                       <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                         {row.map((c, j) => <td key={j} className="px-2 py-1.5 border-r border-b border-border text-center text-gray-600 last:border-r-0">{c}</td>)}
@@ -495,10 +530,11 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
             {/* Step 2 — Works list */}
             <UploadBlock
               title="Шаг 2 — Загрузите список работ"
-              description="Файл с одним столбцом: перечень всех видов работ (без нормачасов). Эти работы будут применены ко всем автомобилям в шаблоне."
+              description="Один столбец с названиями всех видов работ. Нормачасы не нужны — они проставляются на шаге 3."
               buttonLabel="Загрузить список работ (.xlsx)"
               accept=".xlsx,.xls"
               onFile={handleWorksFile}
+              onDownloadTemplate={downloadWorksTemplate}
               status={worksStatus}
               disabled={!step1Done}
             >
@@ -522,24 +558,28 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
 
             {/* Step 3 — Template + filled upload */}
             <div className={`border rounded-lg p-5 space-y-4 transition-colors ${!templateReady ? "opacity-50 pointer-events-none bg-gray-50" : "bg-white border-border"}`}>
-              <p className="font-semibold text-sm text-foreground">Шаг 3 — Скачайте шаблон, заполните нормачасы и загрузите обратно</p>
-              <p className="text-xs text-muted-foreground">
-                Шаблон содержит строку на каждую пару <strong>автомобиль × работа</strong>. В столбце <strong>J «Нормачасы»</strong> проставьте число для каждой строки и загрузите файл обратно.
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-sm text-foreground">Шаг 3 — Скачайте шаблон, заполните нормачасы и загрузите обратно</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    В шаблоне каждая строка = <strong>автомобиль × работа</strong>. Заполните столбец <strong>J «Нормачасы»</strong> числом и загрузите файл обратно.
+                  </p>
+                </div>
+              </div>
 
-              {/* Download template */}
+              {/* Download norms template */}
               <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <Icon name="FileSpreadsheet" size={20} className="text-[hsl(215,70%,22%)] shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-foreground">Шаблон для заполнения</p>
-                  <p className="text-xs text-muted-foreground">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Шаблон нормативов для заполнения</p>
+                  <p className="text-xs text-muted-foreground truncate">
                     {pendingCars && pendingWorks
-                      ? `${pendingCars.length} марок × ${pendingWorks.length} работ = строк для заполнения`
-                      : "Загрузите шаги 1 и 2 для активации"}
+                      ? `${pendingCars.length} марок × ${pendingWorks.length} работ`
+                      : "Загрузите шаги 1 и 2"}
                   </p>
                 </div>
                 <button
-                  onClick={handleDownloadTemplate}
+                  onClick={handleDownloadNormsTemplate}
                   disabled={!templateReady}
                   className="flex items-center gap-2 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all disabled:opacity-50 shrink-0"
                 >
