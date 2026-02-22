@@ -44,8 +44,8 @@ const TabDatabase = () => {
         return;
       }
 
-      // 2. Нарезаем на чанки по 1000 строк
-      const CHUNK_SIZE = 1000;
+      // 2. Нарезаем на чанки по 500 строк
+      const CHUNK_SIZE = 500;
       const chunks: unknown[][][] = [];
       for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
         chunks.push(dataRows.slice(i, i + CHUNK_SIZE));
@@ -170,10 +170,10 @@ const TabDatabase = () => {
         {/* Step 1 */}
         <UploadBlock title="Шаг 1 — Загрузите базу автомобилей"
           description="Файлы до 200мб+. Каждая строка — одна модификация. Поддерживается 89 колонок: кузов, двигатель, трансмиссия, подвеска, электро-данные."
-          buttonLabel={uploadProgress !== null ? `Загружается ${uploadProgress}%...` : "Загрузить базу авто (.xlsx)"}
+          buttonLabel="Загрузить базу авто (.xlsx)"
           accept=".xlsx,.xls"
           onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars || carDbCount > 0}
-          onDownloadTemplate={downloadCarsTemplate} status={carsStatus}>
+          onDownloadTemplate={downloadCarsTemplate} status={carsStatus} uploading={uploadProgress !== null}>
           {uploadProgress !== null && (
             <div className="mb-4 space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="flex justify-between items-center">
