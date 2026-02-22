@@ -51,32 +51,83 @@ function buildChain(
 
   const childChain = buildChain(firstLinked, links, works, depth + 1);
 
-  const meStep: ChainStep = {
-    workName,
-    baseHours: myHours,
-    uniqueHours,
-    color: group.color,
-    depth,
-  };
+  const meStep: ChainStep = { workName, baseHours: myHours, uniqueHours, color: group.color, depth };
 
-  if (childChain.length > 0) {
-    return [...childChain, meStep];
-  }
+  if (childChain.length > 0) return [...childChain, meStep];
 
   if (childWork) {
-    const allLinked = group.linkedWorkNames.map((ln) => works.find((w) => w.name === ln)).filter(Boolean) as { id: string; name: string; hours: number }[];
-    const steps: ChainStep[] = allLinked.map((lw) => ({
-      workName: lw.name,
-      baseHours: lw.hours,
-      uniqueHours: lw.hours,
-      color: group.color,
-      depth: depth + 1,
-    }));
-    return [...steps, meStep];
+    const allLinked = group.linkedWorkNames
+      .map((ln) => works.find((w) => w.name === ln))
+      .filter(Boolean) as { id: string; name: string; hours: number }[];
+    return [
+      ...allLinked.map((lw) => ({ workName: lw.name, baseHours: lw.hours, uniqueHours: lw.hours, color: group.color, depth: depth + 1 })),
+      meStep,
+    ];
   }
-
   return [];
 }
+
+/** Блок детализации иерархии работ */
+const ChainBlock = ({ chain, linkColor, ratePerHour, compact = false }: {
+  chain: ChainStep[];
+  linkColor: string;
+  ratePerHour: number;
+  compact?: boolean;
+}) => {
+  if (chain.length === 0) return null;
+  return (
+    <div className={`${compact ? "mx-4 mb-2" : "mx-4 mb-3"} rounded-md overflow-hidden border border-border/50`}
+      style={{ borderLeft: `3px solid ${linkColor}` }}>
+      <div className="px-3 py-1.5 flex items-center gap-1.5 bg-gray-100/80 border-b border-border/30">
+        <Icon name="ListOrdered" size={10} className="text-muted-foreground" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Очерёдность выполнения (↑ снизу вверх)</span>
+      </div>
+      {chain.map((step, si) => {
+        const isLast = si === chain.length - 1;
+        const costOwn = step.uniqueHours * ratePerHour;
+        const costMarkup = costOwn * 1.2;
+        return (
+          <div key={step.workName + si}
+            className={`${si < chain.length - 1 ? "border-b border-border/20" : ""} ${isLast ? "bg-white" : "bg-gray-50/40"}`}>
+            <div className="flex items-start gap-2 px-3 py-2">
+              {/* Иконка уровня */}
+              <div className="flex flex-col items-center shrink-0 pt-0.5 gap-0.5 w-4">
+                {isLast ? (
+                  <Icon name="Star" size={11} style={{ color: linkColor } as React.CSSProperties} />
+                ) : (
+                  <>
+                    <Icon name="ArrowUp" size={9} className="text-muted-foreground/40" />
+                  </>
+                )}
+              </div>
+              {/* Название */}
+              <div className="flex-1 min-w-0">
+                <span className={`${isLast ? "text-sm font-bold" : "text-xs text-muted-foreground"}`}
+                  style={isLast ? { color: linkColor } : {}}>
+                  {step.workName}
+                  {isLast && (
+                    <span className="ml-1.5 text-xs font-semibold text-[hsl(215,70%,22%)]">= {step.baseHours.toFixed(1)} н/ч</span>
+                  )}
+                </span>
+              </div>
+              {/* Часы + цены */}
+              <div className="flex items-center gap-3 shrink-0 text-right">
+                <span className={`tabular-nums font-semibold ${isLast ? "text-sm" : "text-xs"}`}
+                  style={{ color: linkColor }}>
+                  {step.uniqueHours.toFixed(1)} н/ч
+                </span>
+                <div className={`flex flex-col items-end ${isLast ? "text-xs" : "text-[10px]"}`}>
+                  <span className="text-green-700 font-medium tabular-nums">{costOwn.toLocaleString("ru-RU")} ₽</span>
+                  <span className="text-orange-500 tabular-nums">{costMarkup.toLocaleString("ru-RU")} ₽</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 const CONSUMABLES_PCT = 0.06;
 
@@ -430,46 +481,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                               </button>
                             </div>
                             {/* Иерархия снизу вверх */}
-                            {chain.length > 0 && (
-                              <div className="pb-2 mx-4 mb-1 border border-border/60 rounded-md bg-gray-50/60 overflow-hidden">
-                                <div className="px-3 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground border-b border-border/40 bg-gray-100/60">
-                                  <Icon name="ListOrdered" size={11} />
-                                  <span>Очерёдность работ (снизу вверх):</span>
-                                </div>
-                                {chain.map((step, si) => {
-                                  const isLast = si === chain.length - 1;
-                                  return (
-                                    <div key={step.workName}
-                                      className={`flex items-center gap-2 px-3 py-2 ${si < chain.length - 1 ? "border-b border-border/30" : ""}`}
-                                      style={{ paddingLeft: `${12 + step.depth * 0}px` }}>
-                                      <div className="flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground w-5">
-                                        {isLast ? (
-                                          <Icon name="Flag" size={11} style={{ color: item.linkColor } as React.CSSProperties} />
-                                        ) : (
-                                          <Icon name="ArrowUp" size={10} className="text-muted-foreground/50" />
-                                        )}
-                                      </div>
-                                      <span className={`flex-1 text-xs ${isLast ? "font-semibold" : "text-muted-foreground"}`}
-                                        style={isLast ? { color: item.linkColor } : {}}>
-                                        {step.workName}
-                                      </span>
-                                      <span className="text-xs font-medium shrink-0 tabular-nums"
-                                        style={{ color: item.linkColor }}>
-                                        {step.uniqueHours.toFixed(1)} н/ч
-                                      </span>
-                                      {si < chain.length - 1 && (
-                                        <Icon name="ChevronRight" size={10} className="text-muted-foreground/40 shrink-0" />
-                                      )}
-                                      {isLast && (
-                                        <span className="text-xs font-bold shrink-0 text-[hsl(215,70%,22%)]">
-                                          = {step.baseHours.toFixed(1)} н/ч
-                                        </span>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                            <ChainBlock chain={chain} linkColor={item.linkColor ?? "#888"} ratePerHour={ratePerHour} compact />
                           </div>
                         );
                       })}
@@ -564,36 +576,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                         <span className="text-right text-orange-600 font-medium">{(item.baseHours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
                       </div>
                       {/* Иерархия снизу вверх */}
-                      {chain.length > 0 && (
-                        <div className="mx-4 mb-2 border border-border/50 rounded overflow-hidden bg-gray-50/70"
-                          style={{ borderLeft: `3px solid ${item.linkColor}` }}>
-                          <div className="px-3 py-1 text-xs text-muted-foreground bg-gray-100/70 border-b border-border/30 flex items-center gap-1.5">
-                            <Icon name="ListOrdered" size={10} />
-                            Очерёдность работ (снизу вверх):
-                          </div>
-                          {chain.map((step, si) => {
-                            const isLast = si === chain.length - 1;
-                            return (
-                              <div key={step.workName}
-                                className={`grid gap-2 px-3 py-1.5 text-xs ${si < chain.length - 1 ? "border-b border-border/20" : ""}`}
-                                style={{ gridTemplateColumns: "1fr 80px 1fr 1fr" }}>
-                                <span className={`flex items-center gap-1.5 ${isLast ? "font-semibold" : "text-muted-foreground"}`}
-                                  style={isLast ? { color: item.linkColor } : {}}>
-                                  <Icon name={isLast ? "Flag" : "ArrowUp"} size={9}
-                                    style={isLast ? { color: item.linkColor } as React.CSSProperties : {}} className={isLast ? "" : "text-muted-foreground/40"} />
-                                  {step.workName}
-                                  {isLast && <span className="font-bold text-[hsl(215,70%,22%)] ml-1">= {step.baseHours.toFixed(1)} н/ч</span>}
-                                </span>
-                                <span className="text-center font-medium tabular-nums" style={{ color: item.linkColor }}>
-                                  {step.uniqueHours.toFixed(1)}
-                                </span>
-                                <span className="text-right text-muted-foreground">{(step.uniqueHours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
-                                <span className="text-right text-muted-foreground">{(step.uniqueHours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                      <ChainBlock chain={chain} linkColor={item.linkColor ?? "#888"} ratePerHour={ratePerHour} />
                     </div>
                   );
                 })}
