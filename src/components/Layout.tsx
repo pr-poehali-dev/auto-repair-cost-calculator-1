@@ -18,7 +18,7 @@ const Layout = ({ activeTab, onTabChange, children }: LayoutProps) => {
   return (
     <div className="min-h-screen bg-background flex flex-col font-ibm">
       {/* Header */}
-      <header className="bg-[hsl(215,70%,22%)] text-white shadow-lg">
+      <header className="text-white shadow-lg bg-sky-500 my-0">
         <div className="max-w-7xl mx-auto px-6 py-0">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
