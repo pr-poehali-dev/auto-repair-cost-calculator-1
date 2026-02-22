@@ -113,6 +113,28 @@ export function downloadWorksTemplate() {
   XLSX.writeFile(wb, "шаблон_список_работ.xlsx");
 }
 
+/** Переносит works из oldCars в newCars по совпадению mod.id */
+export function reapplyWorks(newCars: CarBrand[], oldCars: CarBrand[]): CarBrand[] {
+  const worksMap = new Map<string, Work[]>();
+  oldCars.forEach((b) => b.models.forEach((m) => m.generations.forEach((g) =>
+    g.modifications.forEach((mod) => { if (mod.works.length > 0) worksMap.set(mod.id, mod.works); })
+  )));
+  if (worksMap.size === 0) return newCars;
+  return newCars.map((b) => ({
+    ...b,
+    models: b.models.map((m) => ({
+      ...m,
+      generations: m.generations.map((g) => ({
+        ...g,
+        modifications: g.modifications.map((mod) => {
+          const w = worksMap.get(mod.id);
+          return w && w.length > 0 ? { ...mod, works: w } : mod;
+        }),
+      })),
+    })),
+  }));
+}
+
 export function mergeWorks(existing: WorkEntry[], incoming: WorkEntry[]): WorkEntry[] {
   const names = new Set(existing.map((w) => w.name.toLowerCase()));
   return [...existing, ...incoming.filter((w) => !names.has(w.name.toLowerCase()))];

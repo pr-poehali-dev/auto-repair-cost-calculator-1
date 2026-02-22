@@ -1,5 +1,7 @@
-import { useState, createContext, useContext } from "react";
+import { useState, createContext, useContext, useEffect, useCallback } from "react";
 import { Branch } from "@/components/admin/TabBranches";
+
+const FUNC_GET_CARS = "https://functions.poehali.dev/135a6c4a-9149-40f9-a7a8-cf2ce637fdb2";
 
 const LS_CARS = "remtech_cars_v1";
 const LS_WORKS = "remtech_works_v1";
@@ -94,6 +96,9 @@ interface AppDataContextType {
   defaultRate: number;
   workLinks: WorkLinkGroup[];
   setWorkLinks: (data: WorkLinkGroup[]) => void;
+  carDbCount: number;
+  carDbLoading: boolean;
+  reloadCarDb: () => Promise<void>;
 }
 
 export const AppDataContext = createContext<AppDataContextType>({
@@ -106,6 +111,9 @@ export const AppDataContext = createContext<AppDataContextType>({
   defaultRate: 2500,
   workLinks: [],
   setWorkLinks: () => {},
+  carDbCount: 0,
+  carDbLoading: false,
+  reloadCarDb: async () => {},
 });
 
 export const useAppData = () => useContext(AppDataContext);
@@ -118,10 +126,28 @@ const Index = () => {
   const [worksDatabase, setWorksDatabaseRaw] = useState<WorkEntry[]>(() => loadLS<WorkEntry[]>(LS_WORKS, []));
   const [branches, setBranchesRaw] = useState<Branch[]>(() => loadLS<Branch[]>(LS_BRANCHES, DEFAULT_BRANCHES));
   const [workLinks, setWorkLinksRaw] = useState<WorkLinkGroup[]>(() => loadLS<WorkLinkGroup[]>(LS_LINKS, []));
+  const [carDbCount, setCarDbCount] = useState<number>(0);
+  const [carDbLoading, setCarDbLoading] = useState<boolean>(false);
 
   const setCarDatabase = (data: CarBrand[]) => { setCarDatabaseRaw(data); saveLS(LS_CARS, data); };
   const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); };
   const setWorkLinks = (data: WorkLinkGroup[]) => { setWorkLinksRaw(data); saveLS(LS_LINKS, data); };
+
+  const reloadCarDb = useCallback(async () => {
+    setCarDbLoading(true);
+    try {
+      const res = await fetch(`${FUNC_GET_CARS}?count=1`);
+      const raw = await res.json();
+      const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+      setCarDbCount(data.modifications ?? 0);
+    } catch {
+      // ignore
+    } finally {
+      setCarDbLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { reloadCarDb(); }, [reloadCarDb]);
   const setBranches = (fn: (prev: Branch[]) => Branch[]) => {
     setBranchesRaw((prev) => {
       const next = fn(prev);
@@ -140,7 +166,7 @@ const Index = () => {
   };
 
   return (
-    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks }}>
+    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, carDbCount, carDbLoading, reloadCarDb }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         <div style={{ display: activeTab === "calculator" ? undefined : "none" }}>
           <CalculatorPage onAddToHistory={addToHistory} />

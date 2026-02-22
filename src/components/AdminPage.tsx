@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { CarBrand, Work } from "@/data/carDatabase";
+import { reapplyWorks } from "@/components/admin/adminHelpers";
 import * as XLSX from "xlsx";
 import TabDashboard from "@/components/admin/TabDashboard";
 import TabBranches from "@/components/admin/TabBranches";
@@ -264,7 +265,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [filledStatus, setFilledStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [pendingCars, setPendingCars] = useState<CarBrand[] | null>(null);
-  const [pendingWorks, setPendingWorks] = useState<WorkEntry[] | null>(null);
+  const [pendingWorks, setPendingWorks] = useState<WorkEntry[] | null>(() => worksDatabase.length > 0 ? worksDatabase : null);
   const [dbReady, setDbReady] = useState(false);
   const filledFileRef = useRef<HTMLInputElement>(null);
 
@@ -307,13 +308,21 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   };
 
   const handleCarsFile = (file: File) => parseCarsFile(file, (cars) => {
-    const total = cars.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
-    setPendingCars(cars); setCarsStatus({ type: "success", msg: `Загружено: ${cars.length} марок, ${total} модификаций из «${file.name}»` });
+    const withWorks = reapplyWorks(cars, pendingCars ?? carDatabase);
+    const total = withWorks.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
+    const restored = withWorks.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + (mod.works.length > 0 ? 1 : 0), 0), 0), 0), 0);
+    setPendingCars(withWorks);
+    if (worksDatabase.length > 0) setPendingWorks(worksDatabase);
+    setCarsStatus({ type: "success", msg: `Загружено: ${cars.length} марок, ${total} модификаций из «${file.name}»${restored > 0 ? `. Восстановлены нормативы для ${restored} модификаций.` : ""}` });
   }, (msg) => setCarsStatus({ type: "error", msg }));
 
   const handleCarsUpdate = (file: File) => parseCarsFile(file, (incoming) => {
-    const merged = mergeCars(pendingCars ?? carDatabase, incoming);
-    setPendingCars(merged); setCarsStatus({ type: "success", msg: `Обновлено: добавлено ${incoming.length} марок. Нормативы старых моделей сохранены.` });
+    const base = pendingCars ?? carDatabase;
+    const merged = mergeCars(base, incoming);
+    const withWorks = reapplyWorks(merged, base);
+    setPendingCars(withWorks);
+    if (worksDatabase.length > 0) setPendingWorks(worksDatabase);
+    setCarsStatus({ type: "success", msg: `Обновлено. Нормативы существующих моделей сохранены.` });
   }, (msg) => setCarsStatus({ type: "error", msg }));
 
   const handleWorksFile = (file: File) => parseWorksFile(file, (works) => {
@@ -453,6 +462,12 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                   onFile={handleWorksFile} onUpdate={handleWorksUpdate} hasData={hasWorks}
                   onDownloadTemplate={downloadWorksTemplate} status={worksStatus}
                   disabled={!step1Done && !hasCars}>
+                  {hasWorks && step1Done && (
+                    <div className="mb-3 flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+                      <Icon name="CheckCircle" size={14} className="shrink-0 mt-0.5" />
+                      <span>Ранее загруженные <strong>{worksDatabase.length} работ</strong> автоматически привязаны. Этот шаг можно пропустить.</span>
+                    </div>
+                  )}
                   <div className="overflow-x-auto rounded border border-border mb-4 max-w-xs">
                     <table className="text-xs w-full border-collapse">
                       <thead><tr className="bg-[hsl(215,70%,22%)] text-white"><th className="px-3 py-1.5 text-left">Наименование работы</th></tr></thead>
