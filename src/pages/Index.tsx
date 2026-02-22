@@ -136,19 +136,24 @@ const Index = () => {
     try {
       // Сначала проверяем счётчик — если 0, используем встроенную базу
       const countRes = await fetch(`${FUNC_GET_CARS}?count=1`);
-      const countData = await countRes.json();
-      const count = typeof countData === "string" ? JSON.parse(countData).modifications : countData.modifications;
+      if (!countRes.ok) { setCarDatabaseRaw(CAR_DATABASE); return; }
+      const countText = await countRes.text();
+      let countData: { modifications: number; brands: number };
+      try { countData = JSON.parse(countText); } catch { setCarDatabaseRaw(CAR_DATABASE); return; }
+      const count = typeof countData === "string" ? JSON.parse(countData as unknown as string).modifications : countData.modifications;
       setCarDbCount(count);
-      if (count === 0) {
+      if (!count || count === 0) {
         setCarDatabaseRaw(CAR_DATABASE);
         return;
       }
-      // Загружаем полное дерево
-      const res = await fetch(FUNC_GET_CARS);
-      const data = await res.json();
-      const parsed: CarBrand[] = typeof data === "string" ? JSON.parse(data) : data;
+      // Загружаем только марки (быстро), модели грузятся лениво
+      const res = await fetch(`${FUNC_GET_CARS}?brands=1`);
+      if (!res.ok) { setCarDatabaseRaw(CAR_DATABASE); return; }
+      const text = await res.text();
+      let parsed: CarBrand[];
+      try { parsed = JSON.parse(text); } catch { setCarDatabaseRaw(CAR_DATABASE); return; }
       if (Array.isArray(parsed) && parsed.length > 0) {
-        setCarDatabaseRaw(parsed);
+        setCarDatabaseRaw(parsed.map(b => ({ ...b, models: [] })));
         setCarDbCount(count);
       }
     } catch {
