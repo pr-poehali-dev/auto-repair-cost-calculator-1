@@ -101,16 +101,18 @@ const Index = () => {
   return (
     <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
-        {activeTab === "calculator" && (
+        <div style={{ display: activeTab === "calculator" ? undefined : "none" }}>
           <CalculatorPage onAddToHistory={addToHistory} />
-        )}
-        {activeTab === "admin" && (
+        </div>
+        <div style={{ display: activeTab === "admin" ? undefined : "none" }}>
           <AdminPage ratePerHour={ratePerHour} onRateChange={setRatePerHour} />
-        )}
-        {activeTab === "history" && (
+        </div>
+        <div style={{ display: activeTab === "history" ? undefined : "none" }}>
           <HistoryPage history={history} onClear={() => setHistory([])} />
-        )}
-        {activeTab === "help" && <HelpPage />}
+        </div>
+        <div style={{ display: activeTab === "help" ? undefined : "none" }}>
+          <HelpPage />
+        </div>
       </Layout>
     </AppDataContext.Provider>
   );
