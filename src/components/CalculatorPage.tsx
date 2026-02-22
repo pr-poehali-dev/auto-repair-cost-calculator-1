@@ -10,10 +10,19 @@ interface Props {
 interface CartItem {
   workId: string;
   workName: string;
+  /** Нормативные часы из базы (не изменяются) */
+  baseHours: number;
+  /** Фактически учитываемые часы с учётом вычета пересечений */
   hours: number;
+  /** ID группы связей, к которой относится работа (если есть) */
+  linkGroupId?: string;
+  /** Цвет группы */
+  linkColor?: string;
+  /** Если true — это сопутствующая работа (её часы уже вычтены из главной) */
+  isLinkedChild?: boolean;
 }
 
-const CONSUMABLES_PCT = 0.06; // 6% — середина диапазона 5-7%
+const CONSUMABLES_PCT = 0.06;
 
 const SelectBox = ({
   label, value, onChange, options, placeholder, disabled,
@@ -33,8 +42,46 @@ const SelectBox = ({
   </div>
 );
 
+/**
+ * Пересчитывает часы корзины с учётом групп связей.
+ * Логика: если в корзине есть главная работа группы И хотя бы одна сопутствующая —
+ * у главной работы вычитаются часы всех присутствующих сопутствующих.
+ * Минимум — 0 часов у главной.
+ */
+function recalcCart(rawCart: CartItem[], workLinks: ReturnType<typeof useAppData>["workLinks"], works: { id: string; name: string; hours: number }[]): CartItem[] {
+  return rawCart.map((item) => {
+    const group = workLinks.find((g) => g.mainWorkName === item.workName);
+    if (!group) return { ...item, hours: item.baseHours, linkGroupId: undefined, linkColor: undefined, isLinkedChild: false };
+
+    // Это главная работа — считаем сколько часов надо вычесть
+    const linkedInCart = rawCart.filter(
+      (c) => c.workId !== item.workId && group.linkedWorkNames.includes(c.workName)
+    );
+    const deduction = linkedInCart.reduce((sum, c) => sum + c.baseHours, 0);
+    const adjustedHours = Math.max(0, item.baseHours - deduction);
+
+    return {
+      ...item,
+      hours: adjustedHours,
+      linkGroupId: group.id,
+      linkColor: group.color,
+      isLinkedChild: false,
+    };
+  }).map((item) => {
+    // Помечаем сопутствующие работы
+    const parentGroup = workLinks.find(
+      (g) => g.linkedWorkNames.includes(item.workName) &&
+        rawCart.some((c) => c.workName === g.mainWorkName)
+    );
+    if (parentGroup) {
+      return { ...item, linkGroupId: parentGroup.id, linkColor: parentGroup.color, isLinkedChild: true };
+    }
+    return item;
+  });
+}
+
 const CalculatorPage = ({ onAddToHistory }: Props) => {
-  const { carDatabase, branches, defaultRate } = useAppData();
+  const { carDatabase, branches, defaultRate, workLinks } = useAppData();
 
   const [branchId, setBranchId] = useState(() => {
     const active = branches.filter((b) => b.active);
@@ -45,7 +92,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const [generationId, setGenerationId] = useState("");
   const [modificationId, setModificationId] = useState("");
   const [workId, setWorkId] = useState("");
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [rawCart, setRawCart] = useState<CartItem[]>([]);
   const [showResult, setShowResult] = useState(false);
   const [hiding, setHiding] = useState(false);
 
@@ -59,8 +106,42 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const modification = useMemo(() => generation?.modifications.find((m) => m.id === modificationId), [generation, modificationId]);
   const works = useMemo(() => modification?.works ?? [], [modification]);
 
+  // Пересчитанная корзина с учётом групп связей
+  const cart = useMemo(() => recalcCart(rawCart, workLinks, works), [rawCart, workLinks, works]);
+
   const selectedWork = useMemo(() => works.find((w) => w.id === workId), [works, workId]);
-  const isInCart = useMemo(() => cart.some((c) => c.workId === workId), [cart, workId]);
+  const isInCart = useMemo(() => rawCart.some((c) => c.workId === workId), [rawCart, workId]);
+
+  // Подсказка при выборе работы: предупредить если она пересекается с тем, что уже в корзине
+  const selectedWorkHint = useMemo(() => {
+    if (!selectedWork) return null;
+    // Выбранная работа — главная группы, в корзине уже есть её сопутствующие
+    const asMain = workLinks.find((g) => g.mainWorkName === selectedWork.name);
+    if (asMain) {
+      const presentLinked = rawCart.filter((c) => asMain.linkedWorkNames.includes(c.workName));
+      if (presentLinked.length > 0) {
+        const deduction = presentLinked.reduce((s, c) => s + c.baseHours, 0);
+        return {
+          type: "main",
+          text: `Группа «${asMain.label}»: в корзине уже есть ${presentLinked.map((c) => `«${c.workName}»`).join(", ")}. Часы будут скорректированы: ${selectedWork.hours} → ${Math.max(0, selectedWork.hours - deduction)} н/ч.`,
+          color: asMain.color,
+        };
+      }
+    }
+    // Выбранная работа — сопутствующая, в корзине уже есть главная
+    const asChild = workLinks.find((g) =>
+      g.linkedWorkNames.includes(selectedWork.name) &&
+      rawCart.some((c) => c.workName === g.mainWorkName)
+    );
+    if (asChild) {
+      return {
+        type: "child",
+        text: `Группа «${asChild.label}»: работа связана с «${asChild.mainWorkName}». Часы главной работы будут уменьшены на ${selectedWork.hours} н/ч.`,
+        color: asChild.color,
+      };
+    }
+    return null;
+  }, [selectedWork, workLinks, rawCart]);
 
   const totalHours = cart.reduce((s, c) => s + c.hours, 0);
   const totalCost = totalHours * ratePerHour;
@@ -68,23 +149,32 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const consumablesCost = Math.round(totalCost * CONSUMABLES_PCT);
   const consumablesMarkup = Math.round(totalCostMarkup * CONSUMABLES_PCT);
 
+  // Есть ли в корзине работы с пересечениями
+  const hasLinkedItems = cart.some((c) => c.linkGroupId);
+
   const handleBranchChange = (v: string) => {
-    setBranchId(v); setCart([]); setShowResult(false); setHiding(false);
+    setBranchId(v); setRawCart([]); setShowResult(false); setHiding(false);
   };
-  const handleBrandChange = (v: string) => { setBrandId(v); setModelId(""); setGenerationId(""); setModificationId(""); setWorkId(""); setCart([]); setShowResult(false); setHiding(false); };
-  const handleModelChange = (v: string) => { setModelId(v); setGenerationId(""); setModificationId(""); setWorkId(""); setCart([]); setShowResult(false); setHiding(false); };
-  const handleGenerationChange = (v: string) => { setGenerationId(v); setModificationId(""); setWorkId(""); setCart([]); setShowResult(false); setHiding(false); };
-  const handleModChange = (v: string) => { setModificationId(v); setWorkId(""); setCart([]); setShowResult(false); setHiding(false); };
+  const handleBrandChange = (v: string) => { setBrandId(v); setModelId(""); setGenerationId(""); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleModelChange = (v: string) => { setModelId(v); setGenerationId(""); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleGenerationChange = (v: string) => { setGenerationId(v); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleModChange = (v: string) => { setModificationId(v); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
 
   const handleAddWork = () => {
     if (!selectedWork || isInCart) return;
-    setCart((prev) => [...prev, { workId: selectedWork.id, workName: selectedWork.name, hours: selectedWork.hours }]);
+    const newItem: CartItem = {
+      workId: selectedWork.id,
+      workName: selectedWork.name,
+      baseHours: selectedWork.hours,
+      hours: selectedWork.hours,
+    };
+    setRawCart((prev) => [...prev, newItem]);
     setWorkId("");
     setShowResult(false);
   };
 
   const handleRemoveWork = (wId: string) => {
-    setCart((prev) => prev.filter((c) => c.workId !== wId));
+    setRawCart((prev) => prev.filter((c) => c.workId !== wId));
     setShowResult(false); setHiding(false);
   };
 
@@ -108,7 +198,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
 
   const handleReset = () => {
     setBrandId(""); setModelId(""); setGenerationId(""); setModificationId("");
-    setWorkId(""); setCart([]); setShowResult(false); setHiding(false);
+    setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false);
   };
 
   const carReady = brandId && modelId && generationId && modificationId;
@@ -120,7 +210,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
         <p className="text-muted-foreground text-sm mt-1">Выберите филиал, автомобиль и добавьте нужные работы для суммарного расчёта</p>
       </div>
 
-      {/* ── Форма (скрывается при показе результата) ── */}
+      {/* ── Форма ── */}
       <div className={hiding ? "animate-slide-up-out pointer-events-none" : showResult ? "hidden" : ""}>
         <div className="space-y-5">
           {/* Branch */}
@@ -192,9 +282,9 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
             <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
               <Icon name="Wrench" size={16} className="text-[hsl(215,70%,22%)]" />
               <h3 className="font-semibold text-sm uppercase tracking-wider text-foreground">Список работ</h3>
-              {cart.length > 0 && (
+              {rawCart.length > 0 && (
                 <span className="ml-auto bg-[hsl(215,70%,22%)] text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                  {cart.length}
+                  {rawCart.length}
                 </span>
               )}
             </div>
@@ -216,7 +306,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                       <SelectBox label="Добавить работу" value={workId}
                         onChange={(v) => { setWorkId(v); setShowResult(false); }}
                         options={works
-                          .filter((w) => !cart.some((c) => c.workId === w.id))
+                          .filter((w) => !rawCart.some((c) => c.workId === w.id))
                           .map((w) => ({ id: w.id, label: `${w.name} (${w.hours} н/ч)` }))}
                         placeholder="— Выберите работу —" />
                     </div>
@@ -226,17 +316,55 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                     </button>
                   </div>
 
-                  {cart.length > 0 && (
+                  {/* Подсказка о связях при выборе работы */}
+                  {selectedWorkHint && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg border text-xs animate-fade-in"
+                      style={{ borderColor: selectedWorkHint.color, background: `${selectedWorkHint.color}12` }}>
+                      <Icon name="Link" size={13} className="shrink-0 mt-0.5" style={{ color: selectedWorkHint.color } as React.CSSProperties} />
+                      <span style={{ color: selectedWorkHint.color }}>{selectedWorkHint.text}</span>
+                    </div>
+                  )}
+
+                  {rawCart.length > 0 && (
                     <div className="border border-border rounded-lg overflow-hidden">
                       <div className="bg-gray-50 px-4 py-2 border-b border-border flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Добавленные работы</span>
                         <span className="text-xs text-muted-foreground">Итого: <strong>{totalHours.toFixed(1)} н/ч</strong></span>
                       </div>
                       {cart.map((item, i) => (
-                        <div key={item.workId} className={`flex items-center gap-3 px-4 py-3 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}>
-                          <Icon name="Wrench" size={13} className="text-muted-foreground shrink-0" />
+                        <div key={item.workId}
+                          className={`flex items-center gap-3 px-4 py-3 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
+                          style={item.linkColor ? { borderLeft: `3px solid ${item.linkColor}` } : {}}>
+                          {/* Иконка: обычная или связанная */}
+                          {item.linkGroupId ? (
+                            <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                              style={{ background: item.linkColor }}>
+                              <Icon name="Link" size={10} className="text-white" />
+                            </div>
+                          ) : (
+                            <Icon name="Wrench" size={13} className="text-muted-foreground shrink-0" />
+                          )}
+
                           <span className="flex-1 text-sm text-foreground">{item.workName}</span>
-                          <span className="text-sm font-semibold text-[hsl(215,70%,22%)] shrink-0">{item.hours} н/ч</span>
+
+                          {/* Часы: с вычетом или обычные */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {item.isLinkedChild ? (
+                              <span className="text-sm font-semibold shrink-0" style={{ color: item.linkColor }}>
+                                {item.baseHours} н/ч
+                              </span>
+                            ) : item.hours !== item.baseHours ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs text-muted-foreground line-through">{item.baseHours}</span>
+                                <span className="text-sm font-semibold" style={{ color: item.linkColor }}>
+                                  {item.hours} н/ч
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-sm font-semibold text-[hsl(215,70%,22%)] shrink-0">{item.hours} н/ч</span>
+                            )}
+                          </div>
+
                           <span className="text-sm text-muted-foreground shrink-0 w-28 text-right">
                             {(item.hours * ratePerHour).toLocaleString("ru-RU")} ₽
                           </span>
@@ -246,6 +374,15 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                           </button>
                         </div>
                       ))}
+
+                      {/* Подпись о связях если они есть */}
+                      {hasLinkedItems && (
+                        <div className="px-4 py-2 bg-blue-50/60 border-t border-border flex items-center gap-2 text-xs text-muted-foreground">
+                          <Icon name="Link" size={12} />
+                          Работы одного цвета связаны — нормачасы скорректированы, дублирования нет
+                        </div>
+                      )}
+
                       <div className="bg-blue-50 px-4 py-3 border-t border-border flex items-center justify-between">
                         <span className="text-sm font-semibold text-[hsl(215,70%,22%)]">Итого нормачасов:</span>
                         <span className="text-base font-bold text-[hsl(215,70%,22%)]">{totalHours.toFixed(1)} н/ч</span>
@@ -256,12 +393,12 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
               )}
 
               <div className="flex gap-3 pt-1">
-                <button onClick={handleCalculate} disabled={cart.length === 0}
+                <button onClick={handleCalculate} disabled={rawCart.length === 0}
                   className="flex items-center gap-2 px-6 py-2.5 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
                   <Icon name="Calculator" size={16} />
-                  Рассчитать стоимость {cart.length > 0 && `(${cart.length} работ)`}
+                  Рассчитать стоимость {rawCart.length > 0 && `(${rawCart.length} работ)`}
                 </button>
-                {cart.length > 0 && (
+                {rawCart.length > 0 && (
                   <button onClick={handleReset}
                     className="flex items-center gap-2 px-4 py-2.5 rounded text-sm font-medium text-muted-foreground border border-border hover:bg-gray-50 transition-all">
                     <Icon name="RotateCcw" size={14} />Сбросить
@@ -276,7 +413,6 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
       {/* ── Результат ── */}
       {showResult && cart.length > 0 && (
         <div className="animate-slide-up-in space-y-4">
-          {/* Back button */}
           <button onClick={handleBackToEdit}
             className="flex items-center gap-2 px-4 py-2 border border-border rounded text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-gray-50 transition-all">
             <Icon name="ChevronLeft" size={16} />
@@ -313,7 +449,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
               {/* Works table */}
               <div className="border border-border rounded-lg overflow-hidden">
                 <div className="bg-[hsl(215,70%,22%)] px-4 py-2.5 grid gap-2 text-xs font-semibold text-white"
-                  style={{ gridTemplateColumns: "1fr 60px 1fr 1fr" }}>
+                  style={{ gridTemplateColumns: "1fr 80px 1fr 1fr" }}>
                   <span>Работа</span>
                   <span className="text-center">Н/ч</span>
                   <span className="text-right">Цена со скидкой</span>
@@ -322,15 +458,40 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                 {cart.map((item, i) => (
                   <div key={item.workId}
                     className={`px-4 py-3 grid gap-2 text-sm ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                    style={{ gridTemplateColumns: "1fr 60px 1fr 1fr" }}>
-                    <span className="text-foreground">{item.workName}</span>
-                    <span className="text-center font-semibold text-[hsl(215,70%,22%)]">{item.hours}</span>
+                    style={{ gridTemplateColumns: "1fr 80px 1fr 1fr", ...(item.linkColor ? { borderLeft: `3px solid ${item.linkColor}` } : {}) }}>
+                    <span className="text-foreground flex items-center gap-1.5">
+                      {item.linkGroupId && (
+                        <span className="w-2 h-2 rounded-full shrink-0 inline-block" style={{ background: item.linkColor }} />
+                      )}
+                      {item.workName}
+                      {item.isLinkedChild && (
+                        <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ background: `${item.linkColor}20`, color: item.linkColor }}>
+                          сопут.
+                        </span>
+                      )}
+                    </span>
+                    <div className="text-center">
+                      {item.hours !== item.baseHours ? (
+                        <div className="flex flex-col items-center">
+                          <span className="text-xs text-muted-foreground line-through">{item.baseHours}</span>
+                          <span className="font-semibold" style={{ color: item.linkColor }}>{item.hours}</span>
+                        </div>
+                      ) : (
+                        <span className="font-semibold text-[hsl(215,70%,22%)]">{item.hours}</span>
+                      )}
+                    </div>
                     <span className="text-right text-green-700 font-medium">{(item.hours * ratePerHour).toLocaleString("ru-RU")} ₽</span>
                     <span className="text-right text-orange-600 font-medium">{(item.hours * ratePerHour * 1.2).toLocaleString("ru-RU")} ₽</span>
                   </div>
                 ))}
+                {hasLinkedItems && (
+                  <div className="px-4 py-2 bg-blue-50/60 border-t border-border flex items-center gap-2 text-xs text-muted-foreground">
+                    <Icon name="Link" size={12} />
+                    Работы одного цвета связаны — часы пересечений учтены без дублирования
+                  </div>
+                )}
                 <div className="px-4 py-3 bg-gray-100 border-t border-border grid gap-2 text-sm font-bold"
-                  style={{ gridTemplateColumns: "1fr 60px 1fr 1fr" }}>
+                  style={{ gridTemplateColumns: "1fr 80px 1fr 1fr" }}>
                   <span className="text-foreground">ИТОГО</span>
                   <span className="text-center text-[hsl(215,70%,22%)]">{totalHours.toFixed(1)}</span>
                   <span className="text-right text-green-700">{totalCost.toLocaleString("ru-RU")} ₽</span>
@@ -340,17 +501,13 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
 
               {/* Summary cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Green — Remtech parts */}
                 <div className="flex flex-col gap-3">
-                  {/* Consumables */}
                   <div className="bg-gray-50 border border-border rounded-lg px-4 py-3 flex items-center justify-between">
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Обязательные расходные материалы</p>
                       <p className="text-xs text-muted-foreground mt-0.5">~6% от стоимости работ</p>
                     </div>
-                    <p className="text-base font-bold text-foreground shrink-0 ml-3">
-                      ~{consumablesCost.toLocaleString("ru-RU")} ₽
-                    </p>
+                    <p className="text-base font-bold text-foreground shrink-0 ml-3">~{consumablesCost.toLocaleString("ru-RU")} ₽</p>
                   </div>
                   <div className="bg-green-50 border border-green-200 rounded-lg p-5">
                     <div className="flex items-start justify-between mb-2">
@@ -366,17 +523,13 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                     <p className="text-xs text-green-600 mt-1">{totalHours.toFixed(1)} н/ч × {ratePerHour.toLocaleString("ru-RU")} ₽/н.ч. · {cart.length} работ</p>
                   </div>
                 </div>
-
-                {/* Orange — client parts */}
                 <div className="flex flex-col gap-3">
                   <div className="bg-gray-50 border border-border rounded-lg px-4 py-3 flex items-center justify-between">
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Обязательные расходные материалы</p>
                       <p className="text-xs text-muted-foreground mt-0.5">~6% от стоимости работ</p>
                     </div>
-                    <p className="text-base font-bold text-foreground shrink-0 ml-3">
-                      ~{consumablesMarkup.toLocaleString("ru-RU")} ₽
-                    </p>
+                    <p className="text-base font-bold text-foreground shrink-0 ml-3">~{consumablesMarkup.toLocaleString("ru-RU")} ₽</p>
                   </div>
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-5">
                     <div className="flex items-start justify-between mb-2">
