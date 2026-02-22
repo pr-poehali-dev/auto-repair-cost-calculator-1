@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { SparePartWork } from "@/data/carDatabase";
+import { Work } from "@/data/carDatabase";
 import { useAppData } from "@/pages/Index";
 import Icon from "@/components/ui/icon";
 import { HistoryItem } from "@/pages/Index";
@@ -47,59 +47,45 @@ const SelectBox = ({
 );
 
 const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
-  const { carDatabase, spareParts } = useAppData();
+  const { carDatabase } = useAppData();
 
   const [brandId, setBrandId] = useState("");
   const [modelId, setModelId] = useState("");
   const [generationId, setGenerationId] = useState("");
   const [modificationId, setModificationId] = useState("");
-  const [partId, setPartId] = useState("");
-  const [result, setResult] = useState<SparePartWork | null>(null);
+  const [workId, setWorkId] = useState("");
+  const [result, setResult] = useState<Work | null>(null);
   const [calculated, setCalculated] = useState(false);
 
   const brand = useMemo(() => carDatabase.find((b) => b.id === brandId), [carDatabase, brandId]);
   const model = useMemo(() => brand?.models.find((m) => m.id === modelId), [brand, modelId]);
   const generation = useMemo(() => model?.generations.find((g) => g.id === generationId), [model, generationId]);
   const modification = useMemo(() => generation?.modifications.find((m) => m.id === modificationId), [generation, modificationId]);
+  const works = useMemo(() => modification?.works ?? [], [modification]);
 
-  const handleBrandChange = (v: string) => {
-    setBrandId(v); setModelId(""); setGenerationId(""); setModificationId("");
-    setCalculated(false); setResult(null);
-  };
-  const handleModelChange = (v: string) => {
-    setModelId(v); setGenerationId(""); setModificationId("");
-    setCalculated(false); setResult(null);
-  };
-  const handleGenerationChange = (v: string) => {
-    setGenerationId(v); setModificationId("");
-    setCalculated(false); setResult(null);
+  const reset = () => {
+    setBrandId(""); setModelId(""); setGenerationId(""); setModificationId("");
+    setWorkId(""); setResult(null); setCalculated(false);
   };
 
-  const canCalculate = brandId && modelId && generationId && modificationId && partId;
+  const handleBrandChange = (v: string) => { setBrandId(v); setModelId(""); setGenerationId(""); setModificationId(""); setWorkId(""); setCalculated(false); setResult(null); };
+  const handleModelChange = (v: string) => { setModelId(v); setGenerationId(""); setModificationId(""); setWorkId(""); setCalculated(false); setResult(null); };
+  const handleGenerationChange = (v: string) => { setGenerationId(v); setModificationId(""); setWorkId(""); setCalculated(false); setResult(null); };
+  const handleModChange = (v: string) => { setModificationId(v); setWorkId(""); setCalculated(false); setResult(null); };
+
+  const canCalculate = brandId && modelId && generationId && modificationId && workId;
 
   const handleCalculate = () => {
-    const part = spareParts.find((p) => p.id === partId);
-    if (!part || !brand || !model || !generation || !modification) return;
-    setResult(part);
+    const work = works.find((w) => w.id === workId);
+    if (!work || !brand || !model || !generation || !modification) return;
+    setResult(work);
     setCalculated(true);
 
     const carStr = `${brand.name} ${model.name} ${generation.name} ${modification.name}`;
-    const costWithParts = part.hours * ratePerHour;
-    const costWithMarkup = part.hours * ratePerHour * 1.2;
+    const costWithParts = work.hours * ratePerHour;
+    const costWithMarkup = work.hours * ratePerHour * 1.2;
 
-    onAddToHistory({
-      car: carStr,
-      part: part.name,
-      hours: part.hours,
-      ratePerHour,
-      costWithParts,
-      costWithMarkup,
-    });
-  };
-
-  const handleReset = () => {
-    setBrandId(""); setModelId(""); setGenerationId(""); setModificationId("");
-    setPartId(""); setResult(null); setCalculated(false);
+    onAddToHistory({ car: carStr, part: work.name, hours: work.hours, ratePerHour, costWithParts, costWithMarkup });
   };
 
   const costWithParts = result ? result.hours * ratePerHour : 0;
@@ -109,7 +95,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
     <div className="space-y-6">
       <div>
         <h2 className="font-montserrat font-bold text-2xl text-foreground">Калькулятор стоимости работ</h2>
-        <p className="text-muted-foreground text-sm mt-1">Выберите автомобиль и запчасть для расчёта стоимости замены</p>
+        <p className="text-muted-foreground text-sm mt-1">Выберите автомобиль и работу — нормачасы подставятся автоматически</p>
       </div>
 
       {/* Car selection */}
@@ -145,7 +131,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
           <SelectBox
             label="Модификация"
             value={modificationId}
-            onChange={(v) => { setModificationId(v); setCalculated(false); setResult(null); }}
+            onChange={handleModChange}
             options={generation?.modifications.map((m) => ({ id: m.id, label: m.name })) || []}
             placeholder="— Выберите модификацию —"
             disabled={!generationId}
@@ -169,28 +155,38 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
               <span className="text-xs text-muted-foreground">Мощность:</span>
               <span className="text-xs font-semibold">{modification.power}</span>
             </div>
+            <div className="flex items-center gap-2">
+              <Icon name="Wrench" size={14} className="text-[hsl(215,70%,22%)]" />
+              <span className="text-xs text-muted-foreground">Работ в базе:</span>
+              <span className="text-xs font-semibold">{works.length}</span>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Part selection — single dropdown, no category */}
+      {/* Work selection */}
       <div className="bg-white rounded-lg border border-border shadow-sm">
         <div className="px-6 py-4 border-b border-border flex items-center gap-2">
           <Icon name="Wrench" size={18} className="text-[hsl(215,70%,22%)]" />
           <h3 className="font-semibold text-sm uppercase tracking-wider text-foreground">Выбор работы</h3>
         </div>
         <div className="p-6">
-          {spareParts.length === 0 ? (
+          {!modificationId ? (
+            <div className="flex items-center gap-3 p-4 bg-gray-50 border border-border rounded-lg text-muted-foreground text-sm">
+              <Icon name="Info" size={16} className="shrink-0" />
+              <span>Сначала выберите марку, модель, поколение и модификацию автомобиля</span>
+            </div>
+          ) : works.length === 0 ? (
             <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
               <Icon name="AlertTriangle" size={16} className="shrink-0" />
-              <span>База работ пуста. Загрузите Excel-файл в панели администратора.</span>
+              <span>Для этой модификации нет работ в базе. Загрузите данные в панели администратора.</span>
             </div>
           ) : (
             <SelectBox
               label="Наименование работы"
-              value={partId}
-              onChange={(v) => { setPartId(v); setCalculated(false); setResult(null); }}
-              options={spareParts.map((p) => ({ id: p.id, label: p.name }))}
+              value={workId}
+              onChange={(v) => { setWorkId(v); setCalculated(false); setResult(null); }}
+              options={works.map((w) => ({ id: w.id, label: w.name }))}
               placeholder="— Выберите работу —"
             />
           )}
@@ -210,7 +206,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
           </button>
           {calculated && (
             <button
-              onClick={handleReset}
+              onClick={reset}
               className="flex items-center gap-2 px-4 py-2.5 rounded text-sm font-medium text-muted-foreground border border-border hover:bg-gray-50 transition-all"
             >
               <Icon name="RotateCcw" size={14} />
@@ -243,7 +239,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
               <div className="mb-6 inline-flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-md px-5 py-3">
                 <Icon name="Clock" size={20} className="text-[hsl(215,70%,22%)]" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Нормачасов</p>
+                  <p className="text-xs text-muted-foreground">Нормачасов (норматив для данной модификации)</p>
                   <p className="text-2xl font-bold font-montserrat text-[hsl(215,70%,22%)]">{result.hours} н/ч</p>
                 </div>
               </div>

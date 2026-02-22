@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { useAppData } from "@/pages/Index";
-import { CarBrand, SparePartWork } from "@/data/carDatabase";
+import { CarBrand, Work } from "@/data/carDatabase";
 import * as XLSX from "xlsx";
 
 const ACCESS_CODE = "0170";
@@ -12,7 +12,7 @@ interface Props {
 }
 
 const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
-  const { carDatabase, spareParts, setExcelData } = useAppData();
+  const { carDatabase, setCarDatabase } = useAppData();
 
   // Auth
   const [authenticated, setAuthenticated] = useState(false);
@@ -25,12 +25,10 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [rateError, setRateError] = useState("");
 
   // Excel upload
-  const fileInputCarsRef = useRef<HTMLInputElement>(null);
-  const fileInputPartsRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadStatus, setUploadStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // Auth handler
   const handleAuth = () => {
     if (codeInput === ACCESS_CODE) {
       setAuthenticated(true);
@@ -41,7 +39,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     }
   };
 
-  // Rate handler
   const handleSaveRate = () => {
     const val = parseFloat(inputValue);
     if (isNaN(val) || val <= 0) { setRateError("Введите корректное число больше 0"); return; }
@@ -52,8 +49,15 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setTimeout(() => setRateSaved(false), 3000);
   };
 
-  // Excel: parse spare parts (columns: name, hours)
-  const handlePartsUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Парсинг Excel.
+   * Ожидаемые столбцы (1-я строка — шапка, игнорируется):
+   * A: Марка | B: Модель | C: Поколение | D: Годы | E: Модификация
+   * F: Двигатель | G: КПП | H: Мощность | I: Работа | J: Нормачасы
+   *
+   * Каждая строка = одна работа для конкретной модификации.
+   */
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
@@ -73,82 +77,40 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
           return;
         }
 
-        const parts: SparePartWork[] = rows
-          .filter((row) => {
-            const keys = Object.keys(row);
-            return keys.length >= 2;
-          })
-          .map((row, i) => {
-            const keys = Object.keys(row);
-            const name = String(row[keys[0]] || "").trim();
-            const hoursRaw = row[keys[1]];
-            const hours = parseFloat(String(hoursRaw).replace(",", ".")) || 0;
-            return {
-              id: `excel-part-${i}`,
-              category: "Из Excel",
-              name,
-              hours,
-            };
-          })
-          .filter((p) => p.name && p.hours > 0);
-
-        if (parts.length === 0) {
-          setUploadStatus({ type: "error", msg: "Не удалось извлечь данные. Убедитесь что первый столбец — название, второй — нормачасы." });
-        } else {
-          setExcelData({ cars: carDatabase, parts });
-          setUploadStatus({ type: "success", msg: `Загружено ${parts.length} видов работ из файла «${file.name}»` });
-        }
-      } catch {
-        setUploadStatus({ type: "error", msg: "Ошибка чтения файла. Убедитесь что файл в формате .xlsx или .xls" });
-      }
-      setUploading(false);
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = "";
-  };
-
-  // Excel: parse cars (columns: brand, model, generation, years, modification, engine, transmission, power)
-  const handleCarsUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    setUploadStatus(null);
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = new Uint8Array(ev.target!.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-
-        if (rows.length === 0) {
-          setUploadStatus({ type: "error", msg: "Файл пустой." });
+        const keys = Object.keys(rows[0]);
+        if (keys.length < 10) {
+          setUploadStatus({
+            type: "error",
+            msg: `Недостаточно столбцов (найдено ${keys.length}, ожидается минимум 10). Проверьте формат файла.`,
+          });
           setUploading(false);
           return;
         }
 
-        // Build brand → model → generation → modification hierarchy
+        const get = (row: Record<string, unknown>, idx: number) =>
+          String(row[keys[idx]] ?? "").trim();
+
         const brandsMap = new Map<string, CarBrand>();
 
         rows.forEach((row, i) => {
-          const keys = Object.keys(row);
-          if (keys.length < 5) return;
-          const brandName = String(row[keys[0]] || "").trim();
-          const modelName = String(row[keys[1]] || "").trim();
-          const genName = String(row[keys[2]] || "").trim();
-          const years = String(row[keys[3]] || "").trim();
-          const modName = String(row[keys[4]] || "").trim();
-          const engine = String(row[keys[5]] || "").trim();
-          const transmission = String(row[keys[6]] || "").trim();
-          const power = String(row[keys[7]] || "").trim();
+          const brandName = get(row, 0);
+          const modelName = get(row, 1);
+          const genName = get(row, 2);
+          const years = get(row, 3);
+          const modName = get(row, 4);
+          const engine = get(row, 5);
+          const transmission = get(row, 6);
+          const power = get(row, 7);
+          const workName = get(row, 8);
+          const hoursRaw = get(row, 9);
+          const hours = parseFloat(hoursRaw.replace(",", "."));
 
-          if (!brandName || !modelName || !modName) return;
+          if (!brandName || !modelName || !modName || !workName || isNaN(hours) || hours <= 0) return;
 
           const brandId = brandName.toLowerCase().replace(/\s+/g, "-");
-          const modelId = `${brandId}-${modelName.toLowerCase().replace(/\s+/g, "-")}`;
-          const genId = `${modelId}-${genName.toLowerCase().replace(/\s+/g, "-")}`;
-          const modId = `mod-${i}`;
+          const modelId = `${brandId}__${modelName.toLowerCase().replace(/\s+/g, "-")}`;
+          const genId = `${modelId}__${genName.toLowerCase().replace(/\s+/g, "-")}`;
+          const modId = `${genId}__${modName.toLowerCase().replace(/\s+/g, "-")}`;
 
           if (!brandsMap.has(brandId)) {
             brandsMap.set(brandId, { id: brandId, name: brandName, models: [] });
@@ -163,28 +125,41 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
 
           let gen = model.generations.find((g) => g.id === genId);
           if (!gen) {
-            gen = { id: genId, name: genName, years, modifications: [] };
+            gen = { id: genId, name: genName || modName, years, modifications: [] };
             model.generations.push(gen);
           }
 
-          gen.modifications.push({
-            id: modId,
-            name: modName,
-            engine: engine || modName,
-            transmission: transmission || "—",
-            power: power || "—",
-          });
+          let mod = gen.modifications.find((m) => m.id === modId);
+          if (!mod) {
+            mod = {
+              id: modId, name: modName,
+              engine: engine || modName, transmission: transmission || "—", power: power || "—",
+              works: [],
+            };
+            gen.modifications.push(mod);
+          }
+
+          const work: Work = { id: `w-${i}`, name: workName, hours };
+          mod.works.push(work);
         });
 
         const cars = Array.from(brandsMap.values());
+        const totalWorksCount = cars.reduce(
+          (sum, b) => sum + b.models.reduce(
+            (s2, m) => s2 + m.generations.reduce(
+              (s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + mod.works.length, 0), 0), 0), 0);
+
         if (cars.length === 0) {
-          setUploadStatus({ type: "error", msg: "Не удалось извлечь автомобили. Проверьте формат файла." });
+          setUploadStatus({ type: "error", msg: "Не удалось распознать данные. Проверьте формат файла." });
         } else {
-          setExcelData({ cars, parts: spareParts });
-          setUploadStatus({ type: "success", msg: `Загружено ${cars.length} марок, данные автомобилей обновлены из «${file.name}»` });
+          setCarDatabase(cars);
+          setUploadStatus({
+            type: "success",
+            msg: `Загружено: ${cars.length} марок, ${totalWorksCount} работ из файла «${file.name}»`,
+          });
         }
       } catch {
-        setUploadStatus({ type: "error", msg: "Ошибка чтения файла." });
+        setUploadStatus({ type: "error", msg: "Ошибка чтения файла. Убедитесь что файл в формате .xlsx или .xls" });
       }
       setUploading(false);
     };
@@ -192,7 +167,14 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     e.target.value = "";
   };
 
-  // Auth screen
+  const totalModifications = carDatabase.reduce(
+    (sum, b) => sum + b.models.reduce(
+      (s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
+  const totalWorks = carDatabase.reduce(
+    (sum, b) => sum + b.models.reduce(
+      (s2, m) => s2 + m.generations.reduce(
+        (s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + mod.works.length, 0), 0), 0), 0);
+
   if (!authenticated) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -204,7 +186,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
             <h2 className="font-montserrat font-bold text-xl text-foreground">Панель администратора</h2>
             <p className="text-sm text-muted-foreground mt-1 text-center">Введите код доступа для входа</p>
           </div>
-
           <div className="space-y-3">
             <input
               type="password"
@@ -234,8 +215,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
       </div>
     );
   }
-
-  const categories = [...new Set(spareParts.map((p) => p.category))];
 
   return (
     <div className="space-y-6">
@@ -332,74 +311,54 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
             </div>
           )}
 
-          {/* Parts upload */}
           <div className="border border-border rounded-lg p-5">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="font-semibold text-sm text-foreground">Список работ (запчасти и нормачасы)</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Формат: столбец 1 — название работы, столбец 2 — нормачасы</p>
-              </div>
-              <Icon name="Wrench" size={18} className="text-muted-foreground shrink-0" />
+            <p className="font-semibold text-sm text-foreground mb-1">Формат файла</p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Каждая строка — одна работа для конкретной модификации. Строки с одинаковой модификацией объединяются автоматически.
+              Нормачасы у одной и той же работы могут различаться для разных модификаций.
+            </p>
+            <div className="overflow-x-auto rounded border border-border">
+              <table className="text-xs w-full border-collapse">
+                <thead>
+                  <tr className="bg-[hsl(215,70%,22%)] text-white">
+                    {["A\nМарка","B\nМодель","C\nПоколение","D\nГоды","E\nМодификация","F\nДвигатель","G\nКПП","H\nМощность","I\nРабота","J\nНормачасы"].map((h) => (
+                      <th key={h} className="px-2 py-2 text-center font-semibold whitespace-pre border-r border-blue-800 last:border-0">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ["Toyota","Camry","V70","2017-н.в.","2.5 AT","2.5 бенз.","Автомат","181 л.с.","Замена масла","0.5"],
+                    ["Toyota","Camry","V70","2017-н.в.","2.5 AT","","","","Замена колодок","1.0"],
+                    ["Toyota","Camry","V70","2017-н.в.","3.5 AT","3.5 бенз.","Автомат","249 л.с.","Замена масла","0.5"],
+                    ["Toyota","Camry","V70","2017-н.в.","3.5 AT","","","","Замена колодок","1.2"],
+                  ].map((row, i) => (
+                    <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      {row.map((cell, j) => (
+                        <td key={j} className="px-2 py-1.5 border-r border-b border-border text-center text-gray-600 last:border-r-0">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="bg-gray-50 border border-dashed border-border rounded p-3 mb-3 text-xs text-muted-foreground font-mono">
-              <div className="grid grid-cols-2 gap-2 text-center mb-1">
-                <span className="bg-[hsl(215,70%,22%)] text-white rounded px-2 py-0.5">Название работы</span>
-                <span className="bg-[hsl(215,70%,22%)] text-white rounded px-2 py-0.5">Нормачасы</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <span>Замена масла двигателя</span>
-                <span>0.5</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <span>Замена тормозных колодок</span>
-                <span>1.5</span>
-              </div>
-            </div>
-            <input ref={fileInputPartsRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handlePartsUpload} />
-            <button
-              onClick={() => fileInputPartsRef.current?.click()}
-              disabled={uploading}
-              className="flex items-center gap-2 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all disabled:opacity-50"
-            >
-              <Icon name={uploading ? "Loader" : "Upload"} size={15} />
-              Загрузить файл работ
-            </button>
+            <p className="mt-3 text-xs text-muted-foreground flex items-start gap-1.5">
+              <Icon name="Info" size={13} className="shrink-0 mt-0.5 text-[hsl(215,70%,22%)]" />
+              Первая строка файла — заголовки (будут проигнорированы). Столбцы F, G, H необязательны.
+            </p>
           </div>
 
-          {/* Cars upload */}
-          <div className="border border-border rounded-lg p-5">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="font-semibold text-sm text-foreground">База автомобилей</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Формат: Марка | Модель | Поколение | Годы | Модификация | Двигатель | КПП | Мощность
-                </p>
-              </div>
-              <Icon name="Car" size={18} className="text-muted-foreground shrink-0" />
-            </div>
-            <div className="bg-gray-50 border border-dashed border-border rounded p-3 mb-3 overflow-x-auto">
-              <div className="text-xs text-muted-foreground font-mono min-w-max">
-                <div className="grid grid-cols-8 gap-2 text-center mb-1">
-                  {["Марка","Модель","Поколение","Годы","Модификация","Двигатель","КПП","Мощность"].map((h) => (
-                    <span key={h} className="bg-[hsl(215,70%,22%)] text-white rounded px-1 py-0.5">{h}</span>
-                  ))}
-                </div>
-                <div className="grid grid-cols-8 gap-2 text-center text-gray-500">
-                  <span>Toyota</span><span>Camry</span><span>V70</span><span>2017-н.в.</span>
-                  <span>2.5 AT</span><span>2.5 бенз.</span><span>Автомат</span><span>181 л.с.</span>
-                </div>
-              </div>
-            </div>
-            <input ref={fileInputCarsRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleCarsUpload} />
-            <button
-              onClick={() => fileInputCarsRef.current?.click()}
-              disabled={uploading}
-              className="flex items-center gap-2 px-4 py-2 border border-[hsl(215,70%,22%)] text-[hsl(215,70%,22%)] rounded text-sm font-semibold hover:bg-blue-50 transition-all disabled:opacity-50"
-            >
-              <Icon name={uploading ? "Loader" : "Upload"} size={15} />
-              Загрузить базу авто
-            </button>
-          </div>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileUpload} />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-2 px-6 py-3 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm disabled:opacity-50"
+          >
+            <Icon name={uploading ? "Loader" : "Upload"} size={16} />
+            {uploading ? "Загружаю..." : "Загрузить Excel-файл"}
+          </button>
         </div>
       </div>
 
@@ -413,8 +372,8 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
             {[
               { label: "Марок авто", value: carDatabase.length.toString(), icon: "Car" },
-              { label: "Видов работ", value: spareParts.length.toString(), icon: "Wrench" },
-              { label: "Категорий", value: categories.length.toString(), icon: "Layers" },
+              { label: "Модификаций", value: totalModifications.toString(), icon: "Settings2" },
+              { label: "Работ в базе", value: totalWorks.toString(), icon: "Wrench" },
               { label: "Текущая ставка", value: `${ratePerHour.toLocaleString("ru-RU")} ₽`, icon: "DollarSign" },
             ].map((s) => (
               <div key={s.label} className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-center">
@@ -425,17 +384,27 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
             ))}
           </div>
           <div className="space-y-2">
-            {categories.map((cat) => {
-              const count = spareParts.filter((p) => p.category === cat).length;
+            {carDatabase.map((brand) => {
+              const bWorks = brand.models.reduce(
+                (s, m) => s + m.generations.reduce(
+                  (s2, g) => s2 + g.modifications.reduce((s3, mod) => s3 + mod.works.length, 0), 0), 0);
+              const bMods = brand.models.reduce(
+                (s, m) => s + m.generations.reduce((s2, g) => s2 + g.modifications.length, 0), 0);
               return (
-                <div key={cat} className="flex items-center justify-between py-2 px-3 border border-border rounded hover:bg-gray-50 transition-colors">
+                <div key={brand.id} className="flex items-center justify-between py-2 px-3 border border-border rounded hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-2">
-                    <Icon name="ChevronRight" size={14} className="text-muted-foreground" />
-                    <span className="text-sm font-medium">{cat}</span>
+                    <Icon name="Car" size={14} className="text-muted-foreground" />
+                    <span className="text-sm font-medium">{brand.name}</span>
+                    <span className="text-xs text-muted-foreground">({brand.models.length} мод.)</span>
                   </div>
-                  <span className="text-xs text-muted-foreground bg-gray-100 px-2 py-0.5 rounded-full">
-                    {count} работ
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground bg-gray-100 px-2 py-0.5 rounded-full">
+                      {bMods} модиф.
+                    </span>
+                    <span className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
+                      {bWorks} работ
+                    </span>
+                  </div>
                 </div>
               );
             })}
