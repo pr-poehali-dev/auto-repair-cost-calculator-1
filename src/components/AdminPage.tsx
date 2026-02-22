@@ -275,7 +275,7 @@ const UploadBlock = ({
 const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase } = useAppData();
 
-  const [authenticated, setAuthenticated] = useState(false);
+  const [authenticated, setAuthenticated] = useState(true);
   const [codeInput, setCodeInput] = useState("");
   const [codeError, setCodeError] = useState(false);
 
