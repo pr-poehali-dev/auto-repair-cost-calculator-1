@@ -1,23 +1,4 @@
 import { useState, createContext, useContext } from "react";
-
-const LS_CARS = "remtech_cars_v1";
-const LS_WORKS = "remtech_works_v1";
-
-function loadLS<T>(key: string, fallback: T): T {
-  try {
-    const r = localStorage.getItem(key);
-    return r ? (JSON.parse(r) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-function saveLS(key: string, value: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // quota exceeded — ignore
-  }
-}
 import Layout from "@/components/Layout";
 import CalculatorPage from "@/components/CalculatorPage";
 import AdminPage from "@/components/AdminPage";
@@ -64,11 +45,8 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState<Tab>("calculator");
   const [ratePerHour, setRatePerHour] = useState<number>(2500);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [carDatabase, setCarDatabaseRaw] = useState<CarBrand[]>(() => loadLS<CarBrand[]>(LS_CARS, CAR_DATABASE));
-  const [worksDatabase, setWorksDatabaseRaw] = useState<WorkEntry[]>(() => loadLS<WorkEntry[]>(LS_WORKS, []));
-
-  const setCarDatabase = (data: CarBrand[]) => { setCarDatabaseRaw(data); saveLS(LS_CARS, data); };
-  const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); };
+  const [carDatabase, setCarDatabase] = useState<CarBrand[]>(CAR_DATABASE);
+  const [worksDatabase, setWorksDatabase] = useState<WorkEntry[]>([]);
 
   const addToHistory = (item: Omit<HistoryItem, "id" | "date">) => {
     const newItem: HistoryItem = {

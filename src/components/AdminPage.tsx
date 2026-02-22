@@ -52,44 +52,6 @@ function downloadWorksTemplate() {
   XLSX.writeFile(wb, "шаблон_список_работ.xlsx");
 }
 
-// Слияние двух баз авто: новые модификации добавляются, старые нормативы сохраняются
-function mergeCars(existing: CarBrand[], incoming: CarBrand[]): CarBrand[] {
-  const result: CarBrand[] = [...existing];
-
-  incoming.forEach((inBrand) => {
-    const brand = result.find((b) => b.id === inBrand.id);
-    if (!brand) { result.push({ ...inBrand }); return; }
-
-    inBrand.models.forEach((inModel) => {
-      const model = brand!.models.find((m) => m.id === inModel.id);
-      if (!model) { brand!.models.push({ ...inModel }); return; }
-
-      inModel.generations.forEach((inGen) => {
-        const gen = model!.generations.find((g) => g.id === inGen.id);
-        if (!gen) { model!.generations.push({ ...inGen }); return; }
-
-        inGen.modifications.forEach((inMod) => {
-          const existingMod = gen!.modifications.find((m) => m.id === inMod.id);
-          if (!existingMod) {
-            // Новая модификация — добавляем как есть (без нормативов)
-            gen!.modifications.push({ ...inMod });
-          }
-          // Существующая модификация — НЕ трогаем (нормативы сохраняются)
-        });
-      });
-    });
-  });
-
-  return result;
-}
-
-// Слияние списков работ: новые добавляются, дублей по имени нет
-function mergeWorks(existing: WorkEntry[], incoming: WorkEntry[]): WorkEntry[] {
-  const existingNames = new Set(existing.map((w) => w.name.toLowerCase()));
-  const newOnes = incoming.filter((w) => !existingNames.has(w.name.toLowerCase()));
-  return [...existing, ...newOnes];
-}
-
 // Парсинг базы авто (новый формат: Годы от / Годы до / Серия)
 function parseCarBase(rows: Record<string, unknown>[]): CarBrand[] | null {
   if (rows.length === 0) return null;
@@ -264,19 +226,15 @@ const StepBadge = ({ n, active, done, label }: { n: number; active: boolean; don
 // ─── Upload block ────────────────────────────────────────────────────────────
 
 const UploadBlock = ({
-  title, description, buttonLabel, accept, onFile, onUpdate, onDownloadTemplate, status, disabled, hasData, children,
+  title, description, buttonLabel, accept, onFile, onDownloadTemplate, status, disabled, children,
 }: {
   title: string; description: string; buttonLabel: string; accept: string;
   onFile: (file: File) => void;
-  onUpdate?: (file: File) => void;
   onDownloadTemplate: () => void;
   status: { type: "success" | "error"; msg: string } | null;
-  disabled?: boolean;
-  hasData?: boolean;
-  children?: React.ReactNode;
+  disabled?: boolean; children?: React.ReactNode;
 }) => {
-  const refLoad = useRef<HTMLInputElement>(null);
-  const refUpdate = useRef<HTMLInputElement>(null);
+  const ref = useRef<HTMLInputElement>(null);
   return (
     <div className={`border rounded-lg p-5 transition-colors ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : "bg-white border-border"}`}>
       <div className="flex items-start justify-between mb-1 gap-3">
@@ -299,30 +257,15 @@ const UploadBlock = ({
           {status.msg}
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        <input ref={refLoad} type="file" accept={accept} className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }} />
-        <button
-          onClick={() => refLoad.current?.click()}
-          className="flex items-center gap-2 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm"
-        >
-          <Icon name="Upload" size={14} />
-          {buttonLabel}
-        </button>
-        {onUpdate && hasData && (
-          <>
-            <input ref={refUpdate} type="file" accept={accept} className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpdate(f); e.target.value = ""; }} />
-            <button
-              onClick={() => refUpdate.current?.click()}
-              className="flex items-center gap-2 px-4 py-2 border border-[hsl(215,70%,22%)] text-[hsl(215,70%,22%)] rounded text-sm font-semibold hover:bg-blue-50 transition-all"
-            >
-              <Icon name="RefreshCw" size={14} />
-              Добавить / обновить
-            </button>
-          </>
-        )}
-      </div>
+      <input ref={ref} type="file" accept={accept} className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }} />
+      <button
+        onClick={() => ref.current?.click()}
+        className="flex items-center gap-2 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm"
+      >
+        <Icon name="Upload" size={14} />
+        {buttonLabel}
+      </button>
     </div>
   );
 };
@@ -349,10 +292,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [dbReady, setDbReady] = useState(false);
   const filledFileRef = useRef<HTMLInputElement>(null);
 
-  // Уже есть данные в базе?
-  const hasCars = carDatabase.length > 0;
-  const hasWorks = worksDatabase.length > 0;
-
   const handleAuth = () => {
     if (codeInput === ACCESS_CODE) { setAuthenticated(true); setCodeError(false); }
     else { setCodeError(true); setCodeInput(""); }
@@ -366,7 +305,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setTimeout(() => setRateSaved(false), 3000);
   };
 
-  const parseCarsFromFile = (file: File, onResult: (cars: CarBrand[]) => void, onError: (msg: string) => void) => {
+  const handleCarsFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -374,14 +313,19 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         const wb = XLSX.read(data, { type: "array" });
         const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
         const cars = parseCarBase(rows);
-        if (!cars || cars.length === 0) { onError("Не удалось распознать автомобили. Скачайте шаблон и проверьте формат."); }
-        else { onResult(cars); }
-      } catch { onError("Ошибка чтения файла."); }
+        if (!cars || cars.length === 0) {
+          setCarsStatus({ type: "error", msg: "Не удалось распознать автомобили. Скачайте шаблон и проверьте формат." });
+        } else {
+          const totalMods = cars.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
+          setPendingCars(cars);
+          setCarsStatus({ type: "success", msg: `Загружено: ${cars.length} марок, ${totalMods} модификаций из «${file.name}»` });
+        }
+      } catch { setCarsStatus({ type: "error", msg: "Ошибка чтения файла." }); }
     };
     reader.readAsArrayBuffer(file);
   };
 
-  const parseWorksFromFile = (file: File, onResult: (works: WorkEntry[]) => void, onError: (msg: string) => void) => {
+  const handleWorksFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -389,52 +333,16 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         const wb = XLSX.read(data, { type: "array" });
         const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
         const works = parseWorksList(rows);
-        if (!works) { onError("Файл пустой или не содержит работ. Скачайте шаблон и проверьте формат."); }
-        else { onResult(works); }
-      } catch { onError("Ошибка чтения файла."); }
+        if (!works) {
+          setWorksStatus({ type: "error", msg: "Файл пустой или не содержит работ. Скачайте шаблон и проверьте формат." });
+        } else {
+          setPendingWorks(works);
+          setWorksDatabase(works);
+          setWorksStatus({ type: "success", msg: `Загружено ${works.length} видов работ из «${file.name}»` });
+        }
+      } catch { setWorksStatus({ type: "error", msg: "Ошибка чтения файла." }); }
     };
     reader.readAsArrayBuffer(file);
-  };
-
-  // Шаг 1 — первичная загрузка (замена)
-  const handleCarsFile = (file: File) => {
-    parseCarsFromFile(file, (cars) => {
-      const totalMods = cars.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
-      setPendingCars(cars);
-      setCarsStatus({ type: "success", msg: `Загружено: ${cars.length} марок, ${totalMods} модификаций из «${file.name}»` });
-    }, (msg) => setCarsStatus({ type: "error", msg }));
-  };
-
-  // Шаг 1 — обновление (слияние, нормативы сохраняются)
-  const handleCarsUpdate = (file: File) => {
-    parseCarsFromFile(file, (incoming) => {
-      const base = pendingCars ?? carDatabase;
-      const merged = mergeCars(base, incoming);
-      const newMods = incoming.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
-      setPendingCars(merged);
-      setCarsStatus({ type: "success", msg: `Обновлено: добавлено ${incoming.length} марок (${newMods} модификаций). Нормативы старых моделей сохранены.` });
-    }, (msg) => setCarsStatus({ type: "error", msg }));
-  };
-
-  // Шаг 2 — первичная загрузка (замена)
-  const handleWorksFile = (file: File) => {
-    parseWorksFromFile(file, (works) => {
-      setPendingWorks(works);
-      setWorksDatabase(works);
-      setWorksStatus({ type: "success", msg: `Загружено ${works.length} видов работ из «${file.name}»` });
-    }, (msg) => setWorksStatus({ type: "error", msg }));
-  };
-
-  // Шаг 2 — обновление (слияние, дубли не добавляются)
-  const handleWorksUpdate = (file: File) => {
-    parseWorksFromFile(file, (incoming) => {
-      const base = pendingWorks ?? worksDatabase;
-      const merged = mergeWorks(base, incoming);
-      const added = merged.length - base.length;
-      setPendingWorks(merged);
-      setWorksDatabase(merged);
-      setWorksStatus({ type: "success", msg: `Обновлено: добавлено ${added} новых работ, итого ${merged.length}. Дубликаты пропущены.` });
-    }, (msg) => setWorksStatus({ type: "error", msg }));
   };
 
   const handleDownloadNormsTemplate = () => {
@@ -466,14 +374,13 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     reader.readAsArrayBuffer(file);
   };
 
+  const step1Done = !!pendingCars;
+  const step2Done = !!pendingWorks;
+  const step3Done = dbReady;
+  const templateReady = (!!pendingCars || carDatabase.length > 0) && (!!pendingWorks || worksDatabase.length > 0);
+
   const totalMods = carDatabase.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
   const totalWorks = carDatabase.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + mod.works.length, 0), 0), 0), 0);
-
-  // Шаг считается выполненным если загружали в этой сессии ИЛИ уже есть данные в базе
-  const step1Done = !!pendingCars || hasCars;
-  const step2Done = !!pendingWorks || hasWorks;
-  const step3Done = dbReady || (hasCars && hasWorks && totalWorks > 0);
-  const templateReady = step1Done && step2Done;
 
   // ─── Auth screen ─────────────────────────────────────────────────────────
 
@@ -593,8 +500,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
               buttonLabel="Загрузить базу авто (.xlsx)"
               accept=".xlsx,.xls"
               onFile={handleCarsFile}
-              onUpdate={handleCarsUpdate}
-              hasData={hasCars}
               onDownloadTemplate={downloadCarsTemplate}
               status={carsStatus}
             >
@@ -629,11 +534,9 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
               buttonLabel="Загрузить список работ (.xlsx)"
               accept=".xlsx,.xls"
               onFile={handleWorksFile}
-              onUpdate={handleWorksUpdate}
-              hasData={hasWorks}
               onDownloadTemplate={downloadWorksTemplate}
               status={worksStatus}
-              disabled={!step1Done && !hasCars}
+              disabled={!step1Done}
             >
               <div className="overflow-x-auto rounded border border-border mb-4 max-w-xs">
                 <table className="text-xs w-full border-collapse">
