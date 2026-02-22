@@ -4,7 +4,7 @@ import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { UploadBlock, StepBadge } from "@/components/admin/AdminUploadBlocks";
 import {
-  FUNC_UPLOAD_CARS, CAR_COLUMNS,
+  FUNC_UPLOAD_CARS_CHUNK, CAR_COLUMNS,
   downloadCarsTemplate, downloadWorksTemplate,
   mergeWorks, parseWorksList, generateNormsTemplate, parseFilledTemplate,
 } from "@/components/admin/adminHelpers";
@@ -24,37 +24,72 @@ const TabDatabase = () => {
     setUploadProgress(0);
     setCarsStatus(null);
     try {
-      setUploadProgress(10);
+      // 1. Читаем Excel на фронте
+      setUploadProgress(5);
       const arrayBuffer = await file.arrayBuffer();
-      setUploadProgress(30);
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const allRows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+      // Найти строку с заголовком
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(5, allRows.length); i++) {
+        const first = String(allRows[i][0] ?? "").trim().toLowerCase();
+        if (first === "марка" || first === "brand") { headerIdx = i; break; }
       }
-      const file_b64 = btoa(binary);
-      setUploadProgress(60);
+      const dataRows = allRows.slice(headerIdx + 1).filter(r => r.some(c => c !== ""));
 
-      const res = await fetch(FUNC_UPLOAD_CARS, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_b64, mode }),
-      });
-      setUploadProgress(90);
-      const data = await res.json();
-      const parsed = typeof data === "string" ? JSON.parse(data) : data;
+      if (dataRows.length === 0) {
+        setCarsStatus({ type: "error", msg: "Файл пустой или не содержит данных." });
+        return;
+      }
 
-      if (!res.ok || parsed.error) {
-        setCarsStatus({ type: "error", msg: parsed.error || "Ошибка загрузки файла на сервер." });
-      } else {
-        setCarsStatus({
-          type: "success",
-          msg: `Загружено: ${parsed.brands} марок, ${parsed.modifications} модификаций из «${file.name}». Пропущено строк: ${parsed.skipped}.`,
+      // 2. Нарезаем на чанки по 1000 строк
+      const CHUNK_SIZE = 1000;
+      const chunks: unknown[][][] = [];
+      for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
+        chunks.push(dataRows.slice(i, i + CHUNK_SIZE));
+      }
+
+      setUploadProgress(10);
+
+      let totalInserted = 0;
+      let totalSkipped = 0;
+
+      // 3. Отправляем чанки последовательно
+      for (let ci = 0; ci < chunks.length; ci++) {
+        const res = await fetch(FUNC_UPLOAD_CARS_CHUNK, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rows: chunks[ci],
+            chunk: ci,
+            total_chunks: chunks.length,
+            mode,
+          }),
         });
-        setDbReady(true);
-        await reloadCarDb();
+        const data = await res.json();
+        const parsed = typeof data === "string" ? JSON.parse(data) : data;
+
+        if (!res.ok || parsed.error) {
+          setCarsStatus({ type: "error", msg: parsed.error || `Ошибка на чанке ${ci + 1}/${chunks.length}` });
+          return;
+        }
+
+        totalInserted += parsed.inserted ?? 0;
+        totalSkipped += parsed.skipped ?? 0;
+
+        // Прогресс: 10% до 95% — по чанкам
+        setUploadProgress(10 + Math.round(((ci + 1) / chunks.length) * 85));
       }
+
+      setUploadProgress(100);
+      setCarsStatus({
+        type: "success",
+        msg: `Загружено ${totalInserted.toLocaleString("ru-RU")} модификаций из «${file.name}». Пропущено строк: ${totalSkipped}.`,
+      });
+      setDbReady(true);
+      await reloadCarDb();
     } catch (e) {
       setCarsStatus({ type: "error", msg: `Ошибка: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
     } finally {
@@ -142,11 +177,20 @@ const TabDatabase = () => {
           {uploadProgress !== null && (
             <div className="mb-4 space-y-1.5">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Отправка на сервер и парсинг…</span>
-                <span>{uploadProgress}%</span>
+                <span>
+                  {uploadProgress < 10
+                    ? "Читаю файл…"
+                    : uploadProgress < 100
+                    ? "Загружаю в базу данных…"
+                    : "Готово!"}
+                </span>
+                <span className="font-semibold">{uploadProgress}%</span>
               </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-[hsl(215,70%,22%)] transition-all duration-500 rounded-full" style={{ width: `${uploadProgress}%` }} />
+              <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[hsl(215,70%,22%)] rounded-full"
+                  style={{ width: `${uploadProgress}%`, transition: "width 0.3s ease" }}
+                />
               </div>
             </div>
           )}
