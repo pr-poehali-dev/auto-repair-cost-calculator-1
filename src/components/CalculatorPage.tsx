@@ -5,7 +5,6 @@ import Icon from "@/components/ui/icon";
 import { HistoryItem } from "@/pages/Index";
 
 interface Props {
-  ratePerHour: number;
   onAddToHistory: (item: Omit<HistoryItem, "id" | "date">) => void;
 }
 
@@ -46,9 +45,10 @@ const SelectBox = ({
   </div>
 );
 
-const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
-  const { carDatabase } = useAppData();
+const CalculatorPage = ({ onAddToHistory }: Props) => {
+  const { carDatabase, branches, defaultRate } = useAppData();
 
+  const [branchId, setBranchId] = useState("");
   const [brandId, setBrandId] = useState("");
   const [modelId, setModelId] = useState("");
   const [generationId, setGenerationId] = useState("");
@@ -57,6 +57,10 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
   const [result, setResult] = useState<Work | null>(null);
   const [calculated, setCalculated] = useState(false);
 
+  const activeBranches = useMemo(() => branches.filter((b) => b.active), [branches]);
+  const selectedBranch = useMemo(() => branches.find((b) => b.id === branchId), [branches, branchId]);
+  const ratePerHour = selectedBranch?.rate ?? defaultRate;
+
   const brand = useMemo(() => carDatabase.find((b) => b.id === brandId), [carDatabase, brandId]);
   const model = useMemo(() => brand?.models.find((m) => m.id === modelId), [brand, modelId]);
   const generation = useMemo(() => model?.generations.find((g) => g.id === generationId), [model, generationId]);
@@ -64,16 +68,17 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
   const works = useMemo(() => modification?.works ?? [], [modification]);
 
   const reset = () => {
-    setBrandId(""); setModelId(""); setGenerationId(""); setModificationId("");
+    setBranchId(""); setBrandId(""); setModelId(""); setGenerationId(""); setModificationId("");
     setWorkId(""); setResult(null); setCalculated(false);
   };
 
+  const handleBranchChange = (v: string) => { setBranchId(v); setBrandId(""); setModelId(""); setGenerationId(""); setModificationId(""); setWorkId(""); setCalculated(false); setResult(null); };
   const handleBrandChange = (v: string) => { setBrandId(v); setModelId(""); setGenerationId(""); setModificationId(""); setWorkId(""); setCalculated(false); setResult(null); };
   const handleModelChange = (v: string) => { setModelId(v); setGenerationId(""); setModificationId(""); setWorkId(""); setCalculated(false); setResult(null); };
   const handleGenerationChange = (v: string) => { setGenerationId(v); setModificationId(""); setWorkId(""); setCalculated(false); setResult(null); };
   const handleModChange = (v: string) => { setModificationId(v); setWorkId(""); setCalculated(false); setResult(null); };
 
-  const canCalculate = brandId && modelId && generationId && modificationId && workId;
+  const canCalculate = branchId && brandId && modelId && generationId && modificationId && workId;
 
   const handleCalculate = () => {
     const work = works.find((w) => w.id === workId);
@@ -95,11 +100,53 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
     <div className="space-y-6">
       <div>
         <h2 className="font-montserrat font-bold text-2xl text-foreground">Калькулятор стоимости работ</h2>
-        <p className="text-muted-foreground text-sm mt-1">Выберите автомобиль и работу — нормачасы подставятся автоматически</p>
+        <p className="text-muted-foreground text-sm mt-1">Выберите филиал, автомобиль и работу — нормачасы подставятся автоматически</p>
+      </div>
+
+      {/* Branch selection */}
+      <div className="bg-white rounded-lg border border-border shadow-sm">
+        <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+          <Icon name="Building2" size={18} className="text-[hsl(215,70%,22%)]" />
+          <h3 className="font-semibold text-sm uppercase tracking-wider text-foreground">Выбор филиала обслуживания</h3>
+        </div>
+        <div className="p-6">
+          {activeBranches.length === 0 ? (
+            <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
+              <Icon name="AlertTriangle" size={16} className="shrink-0" />
+              Нет активных филиалов. Добавьте их в панели администратора.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {activeBranches.map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => handleBranchChange(b.id)}
+                  className={`text-left p-4 rounded-lg border-2 transition-all ${
+                    branchId === b.id
+                      ? "border-[hsl(215,70%,22%)] bg-blue-50"
+                      : "border-border hover:border-[hsl(215,70%,40%)] hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${branchId === b.id ? "bg-[hsl(215,70%,22%)]" : "bg-gray-200"}`}>
+                        <Icon name="Building2" size={14} className={branchId === b.id ? "text-white" : "text-gray-500"} />
+                      </div>
+                      <span className={`font-semibold text-sm ${branchId === b.id ? "text-[hsl(215,70%,22%)]" : "text-foreground"}`}>{b.name}</span>
+                    </div>
+                    {branchId === b.id && <Icon name="CheckCircle" size={16} className="text-[hsl(215,70%,22%)] shrink-0 mt-0.5" />}
+                  </div>
+                  {b.address && <p className="text-xs text-muted-foreground mt-1">{b.address}</p>}
+                  <p className="text-xs font-semibold text-[hsl(25,95%,50%)] mt-2">{b.rate.toLocaleString("ru-RU")} ₽/н.ч.</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Car selection */}
-      <div className="bg-white rounded-lg border border-border shadow-sm">
+      <div className={`bg-white rounded-lg border border-border shadow-sm ${!branchId ? "opacity-50 pointer-events-none" : ""}`}>
         <div className="px-6 py-4 border-b border-border flex items-center gap-2">
           <Icon name="Car" size={18} className="text-[hsl(215,70%,22%)]" />
           <h3 className="font-semibold text-sm uppercase tracking-wider text-foreground">Выбор автомобиля</h3>
@@ -165,7 +212,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
       </div>
 
       {/* Work selection */}
-      <div className="bg-white rounded-lg border border-border shadow-sm">
+      <div className={`bg-white rounded-lg border border-border shadow-sm ${!branchId ? "opacity-50 pointer-events-none" : ""}`}>
         <div className="px-6 py-4 border-b border-border flex items-center gap-2">
           <Icon name="Wrench" size={18} className="text-[hsl(215,70%,22%)]" />
           <h3 className="font-semibold text-sm uppercase tracking-wider text-foreground">Выбор работы</h3>
@@ -186,16 +233,17 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
               label="Наименование работы"
               value={workId}
               onChange={(v) => { setWorkId(v); setCalculated(false); setResult(null); }}
-              options={works.map((w) => ({ id: w.id, label: w.name }))}
+              options={works.map((w) => ({ id: w.id, label: `${w.name} (${w.hours} н/ч)` }))}
               placeholder="— Выберите работу —"
             />
           )}
         </div>
+
         <div className="px-6 pb-6 flex gap-3">
           <button
             onClick={handleCalculate}
             disabled={!canCalculate}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded text-sm font-semibold transition-all duration-200 ${
+            className={`flex items-center gap-2 px-6 py-2.5 rounded text-sm font-semibold transition-all ${
               canCalculate
                 ? "bg-[hsl(215,70%,22%)] text-white hover:bg-[hsl(215,70%,18%)] shadow-sm hover:shadow-md"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
@@ -225,11 +273,20 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
               <h3 className="font-semibold text-sm uppercase tracking-wider text-white">Результат расчёта</h3>
             </div>
             <div className="p-6">
-              <div className="mb-5 pb-5 border-b border-border">
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Автомобиль</p>
-                <p className="font-semibold text-foreground">
-                  {brand?.name} {model?.name} {generation?.name} · {modification?.name}
-                </p>
+              <div className="mb-5 pb-5 border-b border-border flex flex-wrap gap-6">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Филиал</p>
+                  <p className="font-semibold text-foreground flex items-center gap-1.5">
+                    <Icon name="Building2" size={14} className="text-[hsl(215,70%,22%)]" />
+                    {selectedBranch?.name}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Автомобиль</p>
+                  <p className="font-semibold text-foreground">
+                    {brand?.name} {model?.name} {generation?.name} · {modification?.name}
+                  </p>
+                </div>
               </div>
               <div className="mb-5 pb-5 border-b border-border">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Вид работы</p>
@@ -281,7 +338,7 @@ const CalculatorPage = ({ ratePerHour, onAddToHistory }: Props) => {
               <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
                 <Icon name="Info" size={13} />
                 <span>
-                  Базовая ставка: <strong>{ratePerHour.toLocaleString("ru-RU")} ₽/н.ч</strong> · Расчёт сохранён в истории
+                  Ставка филиала «{selectedBranch?.name}»: <strong>{ratePerHour.toLocaleString("ru-RU")} ₽/н.ч</strong> · Расчёт сохранён в истории
                 </span>
               </div>
             </div>

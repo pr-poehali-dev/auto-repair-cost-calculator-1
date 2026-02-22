@@ -1,6 +1,7 @@
 import Icon from "@/components/ui/icon";
 import { useAppData } from "@/pages/Index";
 
+
 interface Props {
   ratePerHour: number;
   onRateChange: (rate: number) => void;
@@ -12,7 +13,7 @@ interface Props {
 }
 
 const TabDashboard = ({ ratePerHour, inputValue, setInputValue, rateSaved, rateError, onSave }: Props) => {
-  const { carDatabase, worksDatabase } = useAppData();
+  const { carDatabase, worksDatabase, branches } = useAppData();
 
   const totalMods = carDatabase.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
   const totalWorks = carDatabase.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + mod.works.length, 0), 0), 0), 0);
@@ -75,6 +76,28 @@ const TabDashboard = ({ ratePerHour, inputValue, setInputValue, rateSaved, rateE
               ))}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Branch rates */}
+      <div className="bg-white rounded-lg border border-border shadow-sm">
+        <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+          <Icon name="Building2" size={18} className="text-[hsl(215,70%,22%)]" />
+          <h3 className="font-semibold text-sm uppercase tracking-wider">Ставки по филиалам</h3>
+        </div>
+        <div className="p-6 space-y-2">
+          {branches.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Филиалы не добавлены. Перейдите в раздел «Филиалы».</p>
+          ) : branches.map((b) => (
+            <div key={b.id} className={`flex items-center justify-between py-2 px-3 border border-border rounded hover:bg-gray-50 transition-colors ${!b.active ? "opacity-50" : ""}`}>
+              <div className="flex items-center gap-2">
+                <Icon name="Building2" size={14} className="text-muted-foreground" />
+                <span className="text-sm font-medium">{b.name}</span>
+                {!b.active && <span className="text-xs text-muted-foreground">(неактивен)</span>}
+              </div>
+              <span className="text-sm font-bold text-[hsl(215,70%,22%)]">{b.rate.toLocaleString("ru-RU")} ₽/н.ч.</span>
+            </div>
+          ))}
         </div>
       </div>
 

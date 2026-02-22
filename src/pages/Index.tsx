@@ -1,7 +1,9 @@
 import { useState, createContext, useContext } from "react";
+import { Branch } from "@/components/admin/TabBranches";
 
 const LS_CARS = "remtech_cars_v1";
 const LS_WORKS = "remtech_works_v1";
+const LS_BRANCHES = "remtech_branches_v1";
 
 function loadLS<T>(key: string, fallback: T): T {
   try {
@@ -38,17 +40,23 @@ export interface HistoryItem {
   costWithMarkup: number;
 }
 
-// Список работ (без нормачасов) — загружается на шаге 1
 export interface WorkEntry {
   id: string;
   name: string;
 }
+
+const DEFAULT_BRANCHES: Branch[] = [
+  { id: "1", name: "Remtech — Главный", address: "г. Москва, ул. Примерная, 1", phone: "+7 (495) 000-00-01", rate: 2500, active: true },
+];
 
 interface AppDataContextType {
   carDatabase: CarBrand[];
   setCarDatabase: (data: CarBrand[]) => void;
   worksDatabase: WorkEntry[];
   setWorksDatabase: (data: WorkEntry[]) => void;
+  branches: Branch[];
+  setBranches: (fn: (prev: Branch[]) => Branch[]) => void;
+  defaultRate: number;
 }
 
 export const AppDataContext = createContext<AppDataContextType>({
@@ -56,6 +64,9 @@ export const AppDataContext = createContext<AppDataContextType>({
   setCarDatabase: () => {},
   worksDatabase: [],
   setWorksDatabase: () => {},
+  branches: DEFAULT_BRANCHES,
+  setBranches: () => {},
+  defaultRate: 2500,
 });
 
 export const useAppData = () => useContext(AppDataContext);
@@ -66,9 +77,17 @@ const Index = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [carDatabase, setCarDatabaseRaw] = useState<CarBrand[]>(() => loadLS<CarBrand[]>(LS_CARS, CAR_DATABASE));
   const [worksDatabase, setWorksDatabaseRaw] = useState<WorkEntry[]>(() => loadLS<WorkEntry[]>(LS_WORKS, []));
+  const [branches, setBranchesRaw] = useState<Branch[]>(() => loadLS<Branch[]>(LS_BRANCHES, DEFAULT_BRANCHES));
 
   const setCarDatabase = (data: CarBrand[]) => { setCarDatabaseRaw(data); saveLS(LS_CARS, data); };
   const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); };
+  const setBranches = (fn: (prev: Branch[]) => Branch[]) => {
+    setBranchesRaw((prev) => {
+      const next = fn(prev);
+      saveLS(LS_BRANCHES, next);
+      return next;
+    });
+  };
 
   const addToHistory = (item: Omit<HistoryItem, "id" | "date">) => {
     const newItem: HistoryItem = {
@@ -80,10 +99,10 @@ const Index = () => {
   };
 
   return (
-    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase }}>
+    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === "calculator" && (
-          <CalculatorPage ratePerHour={ratePerHour} onAddToHistory={addToHistory} />
+          <CalculatorPage onAddToHistory={addToHistory} />
         )}
         {activeTab === "admin" && (
           <AdminPage ratePerHour={ratePerHour} onRateChange={setRatePerHour} />

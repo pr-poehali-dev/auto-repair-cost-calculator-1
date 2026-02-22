@@ -1,41 +1,42 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
+import { useAppData } from "@/pages/Index";
 
-interface Branch {
+export interface Branch {
   id: string;
   name: string;
   address: string;
   phone: string;
+  rate: number;
   active: boolean;
 }
 
 const TabBranches = () => {
-  const [branches, setBranches] = useState<Branch[]>([
-    { id: "1", name: "Remtech — Главный", address: "г. Москва, ул. Примерная, 1", phone: "+7 (495) 000-00-01", active: true },
-  ]);
+  const { branches, setBranches, defaultRate } = useAppData();
   const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", address: "", phone: "" });
+  const [form, setForm] = useState({ name: "", address: "", phone: "", rate: "" });
   const [adding, setAdding] = useState(false);
 
   const startAdd = () => {
-    setForm({ name: "", address: "", phone: "" });
+    setForm({ name: "", address: "", phone: "", rate: String(defaultRate) });
     setAdding(true);
     setEditing(null);
   };
 
   const startEdit = (b: Branch) => {
-    setForm({ name: b.name, address: b.address, phone: b.phone });
+    setForm({ name: b.name, address: b.address, phone: b.phone, rate: String(b.rate) });
     setEditing(b.id);
     setAdding(false);
   };
 
   const handleSave = () => {
     if (!form.name.trim()) return;
+    const rate = parseFloat(form.rate) || defaultRate;
     if (adding) {
-      setBranches((prev) => [...prev, { id: Date.now().toString(), ...form, active: true }]);
+      setBranches((prev) => [...prev, { id: Date.now().toString(), name: form.name, address: form.address, phone: form.phone, rate, active: true }]);
       setAdding(false);
     } else if (editing) {
-      setBranches((prev) => prev.map((b) => b.id === editing ? { ...b, ...form } : b));
+      setBranches((prev) => prev.map((b) => b.id === editing ? { ...b, name: form.name, address: form.address, phone: form.phone, rate } : b));
       setEditing(null);
     }
   };
@@ -78,6 +79,21 @@ const TabBranches = () => {
               />
             </div>
           ))}
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Ставка нормачаса (₽)</label>
+            <div className="relative max-w-xs">
+              <input
+                type="number"
+                value={form.rate}
+                onChange={(e) => setForm((prev) => ({ ...prev, rate: e.target.value }))}
+                placeholder={String(defaultRate)}
+                min="1" max="50000"
+                className="w-full border border-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(215,70%,22%)] pr-8"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₽</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Если не указана — используется базовая ставка из «Главной»</p>
+          </div>
           <div className="flex gap-2 pt-1">
             <button onClick={handleSave}
               className="flex items-center gap-2 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all">
@@ -107,11 +123,18 @@ const TabBranches = () => {
                 </div>
                 <div>
                   <p className="font-semibold text-sm text-foreground">{b.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                    <Icon name="MapPin" size={11} />{b.address}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                    <Icon name="Phone" size={11} />{b.phone}
+                  {b.address && (
+                    <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <Icon name="MapPin" size={11} />{b.address}
+                    </p>
+                  )}
+                  {b.phone && (
+                    <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <Icon name="Phone" size={11} />{b.phone}
+                    </p>
+                  )}
+                  <p className="text-xs text-[hsl(215,70%,22%)] font-semibold mt-1 flex items-center gap-1">
+                    <Icon name="DollarSign" size={11} />{b.rate.toLocaleString("ru-RU")} ₽/н.ч.
                   </p>
                 </div>
               </div>
