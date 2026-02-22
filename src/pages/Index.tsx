@@ -52,13 +52,26 @@ export interface WorkEntry {
  * linkedWorkNames — работы, пересекающиеся с главной.
  * При добавлении любой linkedWork в корзину — часы главной уменьшаются
  * ровно на норматив этой linkedWork для данной модификации.
+ *
+ * scope — опциональная привязка к конкретным авто:
+ *   если не задана — группа применяется ко всем автомобилям (глобальная).
+ *   если задана — только для указанных brandId / modelId (и вложенных).
  */
+export interface WorkLinkScope {
+  brandId: string;    // ID марки
+  brandName: string;  // для отображения
+  modelId?: string;   // если указана — только для этой модели
+  modelName?: string;
+}
+
 export interface WorkLinkGroup {
   id: string;
-  label: string;         // произвольное название группы, например "Сцепление + подрамник"
-  color: string;         // HEX-цвет для подсветки в калькуляторе
-  mainWorkName: string;  // название главной работы
-  linkedWorkNames: string[]; // названия сопутствующих работ
+  label: string;
+  color: string;
+  mainWorkName: string;
+  linkedWorkNames: string[];
+  /** Если пусто — группа глобальная (все авто). Если заполнено — только для этих марок/моделей */
+  scope: WorkLinkScope[];
 }
 
 const DEFAULT_BRANCHES: Branch[] = [

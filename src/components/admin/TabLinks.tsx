@@ -1,11 +1,10 @@
 import { useState, useMemo } from "react";
 import Icon from "@/components/ui/icon";
-import { useAppData, WorkLinkGroup, LINK_COLORS } from "@/pages/Index";
+import { useAppData, WorkLinkGroup, WorkLinkScope, LINK_COLORS } from "@/pages/Index";
 
 const TabLinks = () => {
-  const { worksDatabase, workLinks, setWorkLinks } = useAppData();
+  const { worksDatabase, workLinks, setWorkLinks, carDatabase } = useAppData();
 
-  // ── Форма создания/редактирования группы ───────────────────────────────
   const [editing, setEditing] = useState<WorkLinkGroup | null>(null);
   const [showForm, setShowForm] = useState(false);
 
@@ -15,6 +14,7 @@ const TabLinks = () => {
     color: LINK_COLORS[workLinks.length % LINK_COLORS.length],
     mainWorkName: "",
     linkedWorkNames: [],
+    scope: [],
   });
 
   const [form, setForm] = useState<WorkLinkGroup>(emptyForm());
@@ -22,19 +22,30 @@ const TabLinks = () => {
   const [saved, setSaved] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
+  // scope picker state
+  const [scopeBrandId, setScopeBrandId] = useState("");
+  const [scopeModelId, setScopeModelId] = useState("");
+
   const workNames = useMemo(() => worksDatabase.map((w) => w.name), [worksDatabase]);
+
+  // helpers для scope
+  const scopeBrand = useMemo(() => carDatabase.find((b) => b.id === scopeBrandId), [carDatabase, scopeBrandId]);
 
   const openCreate = () => {
     setForm(emptyForm());
     setEditing(null);
     setErrors({});
+    setScopeBrandId("");
+    setScopeModelId("");
     setShowForm(true);
   };
 
   const openEdit = (group: WorkLinkGroup) => {
-    setForm({ ...group });
+    setForm({ ...group, scope: [...group.scope] });
     setEditing(group);
     setErrors({});
+    setScopeBrandId("");
+    setScopeModelId("");
     setShowForm(true);
   };
 
@@ -50,7 +61,6 @@ const TabLinks = () => {
     if (!form.mainWorkName) e.mainWorkName = "Выберите главную работу";
     if (form.linkedWorkNames.length === 0) e.linked = "Добавьте хотя бы одну сопутствующую работу";
     if (form.linkedWorkNames.includes(form.mainWorkName)) e.linked = "Сопутствующая работа не может совпадать с главной";
-    // Проверка дублей с другими группами
     const existingGroup = workLinks.find(
       (g) => g.id !== form.id && g.mainWorkName === form.mainWorkName &&
         form.linkedWorkNames.some((ln) => g.linkedWorkNames.includes(ln))
@@ -89,18 +99,108 @@ const TabLinks = () => {
     setErrors((e) => ({ ...e, linked: "" }));
   };
 
+  // ── scope helpers ──────────────────────────────────────────────────────────
+  const addScope = () => {
+    if (!scopeBrandId) return;
+    const brand = carDatabase.find((b) => b.id === scopeBrandId);
+    if (!brand) return;
+    const model = scopeModelId ? brand.models.find((m) => m.id === scopeModelId) : undefined;
+    const newScope: WorkLinkScope = {
+      brandId: scopeBrandId,
+      brandName: brand.name,
+      modelId: model?.id,
+      modelName: model?.name,
+    };
+    // Не дублируем
+    const exists = form.scope.some(
+      (s) => s.brandId === newScope.brandId && (s.modelId ?? "") === (newScope.modelId ?? "")
+    );
+    if (exists) return;
+    setForm((p) => ({ ...p, scope: [...p.scope, newScope] }));
+    setScopeBrandId("");
+    setScopeModelId("");
+  };
+
+  const removeScope = (idx: number) => {
+    setForm((p) => ({ ...p, scope: p.scope.filter((_, i) => i !== idx) }));
+  };
+
   const availableForLinked = workNames.filter((n) => n !== form.mainWorkName);
+
+  // ── Лейбл области применения ──────────────────────────────────────────────
+  const scopeLabel = (group: WorkLinkGroup) => {
+    if (group.scope.length === 0) return "Все автомобили";
+    return group.scope.map((s) => s.modelName ? `${s.brandName} ${s.modelName}` : s.brandName).join(", ");
+  };
+
+  // ── Группировка списка по области ─────────────────────────────────────────
+  const globalGroups = workLinks.filter((g) => g.scope.length === 0);
+  const specificGroups = workLinks.filter((g) => g.scope.length > 0);
+
+  const GroupCard = ({ group }: { group: WorkLinkGroup }) => (
+    <div key={group.id}
+      className={`bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${editing?.id === group.id && showForm ? "ring-2 ring-offset-1" : ""}`}
+      style={editing?.id === group.id && showForm ? { borderColor: group.color } : {}}>
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="w-3.5 h-3.5 rounded-full shrink-0 border border-black/10" style={{ background: group.color }} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm text-foreground">{group.label}</span>
+            {group.scope.length > 0 ? (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-muted-foreground flex items-center gap-1">
+                <Icon name="Car" size={10} />{scopeLabel(group)}
+              </span>
+            ) : (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Все авто</span>
+            )}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="px-2 py-0.5 rounded-full font-medium text-white" style={{ background: group.color }}>
+              {group.mainWorkName}
+            </span>
+            <Icon name="Link" size={11} className="text-muted-foreground" />
+            {group.linkedWorkNames.map((n) => (
+              <span key={n} className="px-2 py-0.5 rounded-full border font-medium" style={{ borderColor: group.color, color: group.color }}>
+                {n}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button onClick={() => openEdit(group)}
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-gray-100 rounded transition-colors" title="Редактировать">
+            <Icon name="Pencil" size={13} />
+          </button>
+          <button
+            onClick={() => handleDelete(group.id)}
+            className={`p-1.5 rounded transition-colors text-xs font-medium ${
+              deleteConfirm === group.id
+                ? "bg-red-500 text-white hover:bg-red-600 px-2"
+                : "text-red-400 hover:text-red-600 hover:bg-red-50"
+            }`}
+            title={deleteConfirm === group.id ? "Нажмите ещё раз для удаления" : "Удалить"}>
+            {deleteConfirm === group.id
+              ? <span className="flex items-center gap-1"><Icon name="Trash2" size={12} />Удалить?</span>
+              : <Icon name="Trash2" size={13} />}
+          </button>
+          {deleteConfirm === group.id && (
+            <button onClick={() => setDeleteConfirm(null)}
+              className="p-1.5 text-muted-foreground hover:bg-gray-100 rounded text-xs">
+              <Icon name="X" size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground max-w-2xl">
-            Связывайте работы, которые частично пересекаются по трудозатратам. Когда в калькуляторе
-            добавляются сразу несколько работ из одной группы — они подсвечиваются одним цветом,
-            а нормачасы главной работы автоматически уменьшаются на сумму сопутствующих.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          Связывайте работы, которые пересекаются по трудозатратам. Можно задать группу глобально
+          (для всех авто) или ограничить конкретными марками и моделями.
+        </p>
         {saved && (
           <span className="flex items-center gap-1.5 text-xs text-green-600 shrink-0 ml-4 animate-fade-in">
             <Icon name="CheckCircle" size={14} />Сохранено
@@ -115,66 +215,27 @@ const TabLinks = () => {
         </div>
       )}
 
-      {/* ── Список существующих групп ──────────────────────────────────── */}
-      {workLinks.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Созданные группы ({workLinks.length})
+      {/* ── Глобальные группы ─────────────────────────────────────────────── */}
+      {globalGroups.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            <Icon name="Globe" size={12} />Глобальные ({globalGroups.length})
           </h3>
-          {workLinks.map((group) => (
-            <div key={group.id}
-              className={`bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${editing?.id === group.id && showForm ? "ring-2 ring-offset-1" : ""}`}
-              style={editing?.id === group.id && showForm ? { borderColor: group.color, ringColor: group.color } : {}}>
-              <div className="flex items-center gap-3 px-4 py-3">
-                {/* Color dot */}
-                <div className="w-3.5 h-3.5 rounded-full shrink-0 border border-black/10" style={{ background: group.color }} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm text-foreground">{group.label}</span>
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="px-2 py-0.5 rounded-full font-medium text-white" style={{ background: group.color }}>
-                      {group.mainWorkName}
-                    </span>
-                    <Icon name="Link" size={11} className="text-muted-foreground" />
-                    {group.linkedWorkNames.map((n) => (
-                      <span key={n} className="px-2 py-0.5 rounded-full border font-medium" style={{ borderColor: group.color, color: group.color }}>
-                        {n}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => openEdit(group)}
-                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-gray-100 rounded transition-colors" title="Редактировать">
-                    <Icon name="Pencil" size={13} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(group.id)}
-                    className={`p-1.5 rounded transition-colors text-xs font-medium ${
-                      deleteConfirm === group.id
-                        ? "bg-red-500 text-white hover:bg-red-600 px-2"
-                        : "text-red-400 hover:text-red-600 hover:bg-red-50"
-                    }`}
-                    title={deleteConfirm === group.id ? "Нажмите ещё раз для удаления" : "Удалить"}>
-                    {deleteConfirm === group.id
-                      ? <span className="flex items-center gap-1"><Icon name="Trash2" size={12} />Удалить?</span>
-                      : <Icon name="Trash2" size={13} />}
-                  </button>
-                  {deleteConfirm === group.id && (
-                    <button onClick={() => setDeleteConfirm(null)}
-                      className="p-1.5 text-muted-foreground hover:bg-gray-100 rounded text-xs">
-                      <Icon name="X" size={13} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+          {globalGroups.map((g) => <GroupCard key={g.id} group={g} />)}
         </div>
       )}
 
-      {/* ── Кнопка создания / форма ────────────────────────────────────── */}
+      {/* ── Группы по авто ────────────────────────────────────────────────── */}
+      {specificGroups.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            <Icon name="Car" size={12} />Для конкретных авто ({specificGroups.length})
+          </h3>
+          {specificGroups.map((g) => <GroupCard key={g.id} group={g} />)}
+        </div>
+      )}
+
+      {/* ── Форма / кнопка создания ───────────────────────────────────────── */}
       {!showForm ? (
         <button onClick={openCreate} disabled={worksDatabase.length < 2}
           className="flex items-center gap-2 px-5 py-2.5 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
@@ -189,6 +250,7 @@ const TabLinks = () => {
             </h3>
           </div>
           <div className="p-5 space-y-5">
+
             {/* Название + цвет */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -212,9 +274,66 @@ const TabLinks = () => {
                   {LINK_COLORS.map((c) => (
                     <button key={c} onClick={() => setForm((p) => ({ ...p, color: c }))}
                       className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${form.color === c ? "border-gray-800 scale-110 shadow-md" : "border-transparent"}`}
-                      style={{ background: c }} title={c} />
+                      style={{ background: c }} />
                   ))}
                 </div>
+              </div>
+            </div>
+
+            {/* ── Область применения ────────────────────────────────────── */}
+            <div className="border border-border rounded-lg overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon name="Car" size={14} className="text-[hsl(215,70%,22%)]" />
+                  <span className="text-xs font-semibold uppercase tracking-wider">Область применения</span>
+                </div>
+                {form.scope.length === 0 && (
+                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Применяется ко всем авто</span>
+                )}
+              </div>
+              <div className="p-4 space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Оставьте пустым — группа будет работать для всех автомобилей. Или добавьте конкретные марки/модели.
+                </p>
+
+                {/* Добавить марку/модель */}
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-muted-foreground">Марка</label>
+                    <select value={scopeBrandId} onChange={(e) => { setScopeBrandId(e.target.value); setScopeModelId(""); }}
+                      className="border border-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(215,70%,22%)] min-w-[160px]">
+                      <option value="">— Марка —</option>
+                      {carDatabase.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-muted-foreground">Модель <span className="text-muted-foreground/60">(необязательно)</span></label>
+                    <select value={scopeModelId} onChange={(e) => setScopeModelId(e.target.value)} disabled={!scopeBrandId}
+                      className="border border-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(215,70%,22%)] min-w-[160px] disabled:opacity-40">
+                      <option value="">— Все модели —</option>
+                      {scopeBrand?.models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={addScope} disabled={!scopeBrandId}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Icon name="Plus" size={14} />Добавить
+                  </button>
+                </div>
+
+                {/* Список добавленных */}
+                {form.scope.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {form.scope.map((s, idx) => (
+                      <div key={idx} className="flex items-center gap-1.5 px-3 py-1.5 bg-[hsl(215,70%,22%)] text-white rounded-full text-xs font-medium">
+                        <Icon name="Car" size={11} />
+                        {s.modelName ? `${s.brandName} ${s.modelName}` : `${s.brandName} (все модели)`}
+                        <button onClick={() => removeScope(idx)} className="ml-1 hover:text-red-200 transition-colors">
+                          <Icon name="X" size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -242,7 +361,7 @@ const TabLinks = () => {
               {errors.mainWorkName && <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><Icon name="AlertCircle" size={11} />{errors.mainWorkName}</p>}
             </div>
 
-            {/* Сопутствующие работы */}
+            {/* Сопутствующие */}
             <div>
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">
                 Сопутствующие работы
@@ -263,12 +382,8 @@ const TabLinks = () => {
                     return (
                       <label key={name}
                         className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${checked ? "bg-blue-50" : i % 2 === 0 ? "bg-white" : "bg-gray-50/50"} hover:bg-blue-50/70`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleLinked(name)}
-                          className="w-4 h-4 rounded accent-[hsl(215,70%,22%)]"
-                        />
+                        <input type="checkbox" checked={checked} onChange={() => toggleLinked(name)}
+                          className="w-4 h-4 rounded accent-[hsl(215,70%,22%)]" />
                         <span className={`text-sm flex-1 ${checked ? "font-medium text-[hsl(215,70%,22%)]" : "text-foreground"}`}>{name}</span>
                         {checked && <Icon name="Link" size={13} className="text-[hsl(215,70%,22%)] shrink-0" />}
                       </label>
@@ -278,8 +393,7 @@ const TabLinks = () => {
               )}
               {form.linkedWorkNames.length > 0 && (
                 <p className="mt-1.5 text-xs text-muted-foreground flex items-center gap-1">
-                  <Icon name="Info" size={11} />
-                  Выбрано: {form.linkedWorkNames.length} работ
+                  <Icon name="Info" size={11} />Выбрано: {form.linkedWorkNames.length} работ
                 </p>
               )}
               {errors.linked && <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><Icon name="AlertCircle" size={11} />{errors.linked}</p>}
@@ -293,9 +407,12 @@ const TabLinks = () => {
                 </p>
                 <p className="text-sm text-foreground">
                   При добавлении <strong>«{form.mainWorkName}»</strong> и{" "}
-                  <strong>«{form.linkedWorkNames.join("» / «")}»</strong> — обе работы подсветятся
-                  одним цветом. Нормачасы «{form.mainWorkName}» автоматически уменьшатся
-                  на часы сопутствующих работ, чтобы итог не задваивался.
+                  <strong>«{form.linkedWorkNames.join("» / «")}»</strong> — работы подсветятся
+                  одним цветом.{" "}
+                  {form.scope.length > 0
+                    ? <>Только для: <strong>{form.scope.map((s) => s.modelName ? `${s.brandName} ${s.modelName}` : s.brandName).join(", ")}</strong>.</>
+                    : "Для всех автомобилей."}
+                  {" "}Нормачасы «{form.mainWorkName}» уменьшатся на часы сопутствующих.
                 </p>
               </div>
             )}

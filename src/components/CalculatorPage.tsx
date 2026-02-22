@@ -43,10 +43,24 @@ const SelectBox = ({
 );
 
 /**
+ * Возвращает только те группы связей, которые применимы к данному авто.
+ * Глобальные (scope пуст) — всегда. С scope — только если brandId и modelId совпадают.
+ */
+function getApplicableLinks(
+  workLinks: ReturnType<typeof useAppData>["workLinks"],
+  brandId: string,
+  modelId: string,
+): ReturnType<typeof useAppData>["workLinks"] {
+  return workLinks.filter((g) => {
+    if (g.scope.length === 0) return true;
+    return g.scope.some(
+      (s) => s.brandId === brandId && (!s.modelId || s.modelId === modelId)
+    );
+  });
+}
+
+/**
  * Пересчитывает часы корзины с учётом групп связей.
- * Логика: если в корзине есть главная работа группы И хотя бы одна сопутствующая —
- * у главной работы вычитаются часы всех присутствующих сопутствующих.
- * Минимум — 0 часов у главной.
  */
 function recalcCart(rawCart: CartItem[], workLinks: ReturnType<typeof useAppData>["workLinks"], works: { id: string; name: string; hours: number }[]): CartItem[] {
   return rawCart.map((item) => {
@@ -106,8 +120,14 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const modification = useMemo(() => generation?.modifications.find((m) => m.id === modificationId), [generation, modificationId]);
   const works = useMemo(() => modification?.works ?? [], [modification]);
 
-  // Пересчитанная корзина с учётом групп связей
-  const cart = useMemo(() => recalcCart(rawCart, workLinks, works), [rawCart, workLinks, works]);
+  // Только применимые к текущему авто связи
+  const applicableLinks = useMemo(
+    () => getApplicableLinks(workLinks, brandId, modelId),
+    [workLinks, brandId, modelId]
+  );
+
+  // Пересчитанная корзина с учётом применимых групп связей
+  const cart = useMemo(() => recalcCart(rawCart, applicableLinks, works), [rawCart, applicableLinks, works]);
 
   const selectedWork = useMemo(() => works.find((w) => w.id === workId), [works, workId]);
   const isInCart = useMemo(() => rawCart.some((c) => c.workId === workId), [rawCart, workId]);
@@ -116,7 +136,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const selectedWorkHint = useMemo(() => {
     if (!selectedWork) return null;
     // Выбранная работа — главная группы, в корзине уже есть её сопутствующие
-    const asMain = workLinks.find((g) => g.mainWorkName === selectedWork.name);
+    const asMain = applicableLinks.find((g) => g.mainWorkName === selectedWork.name);
     if (asMain) {
       const presentLinked = rawCart.filter((c) => asMain.linkedWorkNames.includes(c.workName));
       if (presentLinked.length > 0) {
@@ -129,7 +149,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
       }
     }
     // Выбранная работа — сопутствующая, в корзине уже есть главная
-    const asChild = workLinks.find((g) =>
+    const asChild = applicableLinks.find((g) =>
       g.linkedWorkNames.includes(selectedWork.name) &&
       rawCart.some((c) => c.workName === g.mainWorkName)
     );
@@ -141,7 +161,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
       };
     }
     return null;
-  }, [selectedWork, workLinks, rawCart]);
+  }, [selectedWork, applicableLinks, rawCart]);
 
   const totalHours = cart.reduce((s, c) => s + c.hours, 0);
   const totalCost = totalHours * ratePerHour;
