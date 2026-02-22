@@ -599,10 +599,10 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold">Шаблон нормативов</p>
                       <p className="text-xs text-muted-foreground">
-                        {pendingCars && pendingWorks ? `${pendingCars.length} марок × ${pendingWorks.length} работ` : "Загрузите шаги 1 и 2"}
+                        {hasCars && pendingWorks ? `${carDatabase.length} марок × ${pendingWorks.length} работ` : "Загрузите шаги 1 и 2"}
                       </p>
                     </div>
-                    <button onClick={() => generateNormsTemplate(pendingCars ?? carDatabase, pendingWorks ?? worksDatabase)} disabled={!templateReady}
+                    <button onClick={() => generateNormsTemplate(carDatabase, pendingWorks ?? worksDatabase)} disabled={!templateReady}
                       className="flex items-center gap-2 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all disabled:opacity-50 shrink-0">
                       <Icon name="Download" size={15} />Скачать шаблон
                     </button>
