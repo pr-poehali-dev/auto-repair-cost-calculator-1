@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { CarBrand, Work } from "@/data/carDatabase";
-import { reapplyWorks } from "@/components/admin/adminHelpers";
+import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplateHelper } from "@/components/admin/adminHelpers";
 import * as XLSX from "xlsx";
 import TabDashboard from "@/components/admin/TabDashboard";
 import TabBranches from "@/components/admin/TabBranches";
@@ -28,21 +28,7 @@ interface Props {
 
 // ─── Excel helpers ──────────────────────────────────────────────────────────
 
-function downloadCarsTemplate() {
-  const headers = ["Марка", "Модель", "Поколение", "Годы от", "Годы до", "Серия", "Модификация", "Двигатель", "КПП", "Мощность"];
-  const example = [
-    ["Toyota", "Camry", "VII (V70)", "2017", "н.в.", "SE", "2.5 AT", "2.5 бензин (181 л.с.)", "Автомат", "181 л.с."],
-    ["Toyota", "Camry", "VII (V70)", "2017", "н.в.", "SE", "3.5 AT", "3.5 бензин (249 л.с.)", "Автомат", "249 л.с."],
-    ["Toyota", "Camry", "VI (V50)", "2011", "2017", "Classic", "2.5 AT", "2.5 бензин (181 л.с.)", "Автомат", "181 л.с."],
-    ["BMW", "3 Series", "G20", "2018", "н.в.", "", "320i AT", "2.0 бензин (184 л.с.)", "Автомат", "184 л.с."],
-    ["BMW", "3 Series", "G20", "2018", "н.в.", "", "320d AT", "2.0 дизель (190 л.с.)", "Автомат", "190 л.с."],
-  ];
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...example]);
-  ws["!cols"] = [12, 12, 14, 10, 10, 12, 14, 22, 12, 12].map((w) => ({ wch: w }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "База авто");
-  XLSX.writeFile(wb, "шаблон_база_авто.xlsx");
-}
+
 
 function downloadWorksTemplate() {
   const headers = ["Наименование работы"];
@@ -83,33 +69,7 @@ function mergeWorks(existing: WorkEntry[], incoming: WorkEntry[]): WorkEntry[] {
   return [...existing, ...incoming.filter((w) => !names.has(w.name.toLowerCase()))];
 }
 
-function parseCarBase(rows: Record<string, unknown>[]): CarBrand[] | null {
-  if (rows.length === 0) return null;
-  const keys = Object.keys(rows[0]);
-  if (keys.length < 7) return null;
-  const get = (row: Record<string, unknown>, i: number) => String(row[keys[i]] ?? "").trim();
-  const brandsMap = new Map<string, CarBrand>();
-  rows.forEach((row) => {
-    const brandName = get(row, 0), modelName = get(row, 1), genName = get(row, 2);
-    const yearsFrom = get(row, 3), yearsTo = get(row, 4), series = get(row, 5);
-    const modName = get(row, 6), engine = get(row, 7) || "", transmission = get(row, 8) || "—", power = get(row, 9) || "—";
-    if (!brandName || !modelName || !modName) return;
-    const years = yearsTo ? `${yearsFrom} — ${yearsTo}` : yearsFrom;
-    const genLabel = series ? `${genName} ${series}`.trim() : genName;
-    const brandId = brandName.toLowerCase().replace(/\s+/g, "-");
-    const modelId = `${brandId}__${modelName.toLowerCase().replace(/\s+/g, "-")}`;
-    const genId = `${modelId}__${genLabel.toLowerCase().replace(/[\s()]/g, "-")}`;
-    const modId = `${genId}__${modName.toLowerCase().replace(/\s+/g, "-")}`;
-    if (!brandsMap.has(brandId)) brandsMap.set(brandId, { id: brandId, name: brandName, models: [] });
-    const brand = brandsMap.get(brandId)!;
-    let model = brand.models.find((m) => m.id === modelId);
-    if (!model) { model = { id: modelId, name: modelName, generations: [] }; brand.models.push(model); }
-    let gen = model.generations.find((g) => g.id === genId);
-    if (!gen) { gen = { id: genId, name: genLabel || modName, years, modifications: [] }; model.generations.push(gen); }
-    if (!gen.modifications.find((m) => m.id === modId)) gen.modifications.push({ id: modId, name: modName, engine, transmission, power, works: [] });
-  });
-  return Array.from(brandsMap.values());
-}
+
 
 function parseWorksList(rows: Record<string, unknown>[]): WorkEntry[] | null {
   if (rows.length === 0) return null;
@@ -430,7 +390,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                   description="Файл должен содержать все 89 колонок с точными названиями. Структура шаблона:"
                   buttonLabel="Загрузить базу авто (.xlsx)" accept=".xlsx,.xls"
                   onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars}
-                  onDownloadTemplate={downloadCarsTemplate} status={carsStatus}>
+                  onDownloadTemplate={downloadCarsTemplateHelper} status={carsStatus}>
                   <div className="overflow-x-auto rounded border border-border mb-4" style={{maxHeight: 180}}>
                     <table className="text-xs border-collapse" style={{minWidth: "max-content"}}>
                       <thead className="sticky top-0 z-10">
