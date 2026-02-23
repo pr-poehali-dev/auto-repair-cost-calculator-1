@@ -203,6 +203,10 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const [brandId, setBrandId] = useState("");
   const [modelId, setModelId] = useState("");
   const [generationId, setGenerationId] = useState("");
+  const [filterEngineType, setFilterEngineType] = useState("");
+  const [filterEngineCode, setFilterEngineCode] = useState("");
+  const [filterTransmission, setFilterTransmission] = useState("");
+  const [filterDrive, setFilterDrive] = useState("");
   const [modificationId, setModificationId] = useState("");
   const [workId, setWorkId] = useState("");
   const [rawCart, setRawCart] = useState<CartItem[]>([]);
@@ -216,7 +220,52 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const brand = useMemo(() => carDatabase.find((b) => b.id === brandId), [carDatabase, brandId]);
   const model = useMemo(() => brand?.models.find((m) => m.id === modelId), [brand, modelId]);
   const generation = useMemo(() => model?.generations.find((g) => g.id === generationId), [model, generationId]);
-  const modification = useMemo(() => generation?.modifications.find((m) => m.id === modificationId), [generation, modificationId]);
+
+  // Все модификации выбранного поколения
+  const allMods = useMemo(() => generation?.modifications ?? [], [generation]);
+
+  // Уникальные значения для каждого фильтра (из оставшихся после предыдущих фильтров)
+  const engineTypeOptions = useMemo(() => {
+    const vals = [...new Set(allMods.map((m) => m.engineType).filter(Boolean))] as string[];
+    return vals.map((v) => ({ id: v, label: v }));
+  }, [allMods]);
+
+  const modsAfterEngineType = useMemo(
+    () => (filterEngineType ? allMods.filter((m) => m.engineType === filterEngineType) : allMods),
+    [allMods, filterEngineType]
+  );
+
+  const engineCodeOptions = useMemo(() => {
+    const vals = [...new Set(modsAfterEngineType.map((m) => m.engineCode).filter(Boolean))] as string[];
+    return vals.map((v) => ({ id: v, label: v }));
+  }, [modsAfterEngineType]);
+
+  const modsAfterEngineCode = useMemo(
+    () => (filterEngineCode ? modsAfterEngineType.filter((m) => m.engineCode === filterEngineCode) : modsAfterEngineType),
+    [modsAfterEngineType, filterEngineCode]
+  );
+
+  const transmissionOptions = useMemo(() => {
+    const vals = [...new Set(modsAfterEngineCode.map((m) => m.transmission).filter((v) => v && v !== "—"))] as string[];
+    return vals.map((v) => ({ id: v, label: v }));
+  }, [modsAfterEngineCode]);
+
+  const modsAfterTransmission = useMemo(
+    () => (filterTransmission ? modsAfterEngineCode.filter((m) => m.transmission === filterTransmission) : modsAfterEngineCode),
+    [modsAfterEngineCode, filterTransmission]
+  );
+
+  const driveOptions = useMemo(() => {
+    const vals = [...new Set(modsAfterTransmission.map((m) => m.driveType).filter(Boolean))] as string[];
+    return vals.map((v) => ({ id: v, label: v }));
+  }, [modsAfterTransmission]);
+
+  const filteredMods = useMemo(
+    () => (filterDrive ? modsAfterTransmission.filter((m) => m.driveType === filterDrive) : modsAfterTransmission),
+    [modsAfterTransmission, filterDrive]
+  );
+
+  const modification = useMemo(() => filteredMods.find((m) => m.id === modificationId), [filteredMods, modificationId]);
   const works = useMemo(() => modification?.works ?? [], [modification]);
 
   // Только применимые к текущему авто связи
@@ -271,9 +320,14 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const handleBranchChange = (v: string) => {
     setBranchId(v); setRawCart([]); setShowResult(false); setHiding(false);
   };
-  const handleBrandChange = (v: string) => { setBrandId(v); setModelId(""); setGenerationId(""); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
-  const handleModelChange = (v: string) => { setModelId(v); setGenerationId(""); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
-  const handleGenerationChange = (v: string) => { setGenerationId(v); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const resetFilters = () => { setFilterEngineType(""); setFilterEngineCode(""); setFilterTransmission(""); setFilterDrive(""); setModificationId(""); };
+  const handleBrandChange = (v: string) => { setBrandId(v); setModelId(""); setGenerationId(""); resetFilters(); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleModelChange = (v: string) => { setModelId(v); setGenerationId(""); resetFilters(); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleGenerationChange = (v: string) => { setGenerationId(v); resetFilters(); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleFilterEngineType = (v: string) => { setFilterEngineType(v); setFilterEngineCode(""); setFilterTransmission(""); setFilterDrive(""); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleFilterEngineCode = (v: string) => { setFilterEngineCode(v); setFilterTransmission(""); setFilterDrive(""); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleFilterTransmission = (v: string) => { setFilterTransmission(v); setFilterDrive(""); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
+  const handleFilterDrive = (v: string) => { setFilterDrive(v); setModificationId(""); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
   const handleModChange = (v: string) => { setModificationId(v); setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false); };
 
   const handleAddWork = () => {
@@ -313,7 +367,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   };
 
   const handleReset = () => {
-    setBrandId(""); setModelId(""); setGenerationId(""); setModificationId("");
+    setBrandId(""); setModelId(""); setGenerationId(""); resetFilters();
     setWorkId(""); setRawCart([]); setShowResult(false); setHiding(false);
   };
 
@@ -370,23 +424,50 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
               <Icon name="Car" size={16} className="text-[hsl(215,70%,22%)]" />
               <h3 className="font-semibold text-sm uppercase tracking-wider text-foreground">Выбор автомобиля</h3>
             </div>
-            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <SelectBox label="Марка" value={brandId} onChange={handleBrandChange}
-                options={carDatabase.map((b) => ({ id: b.id, label: b.name }))} placeholder="— Марка —" />
-              <SelectBox label="Модель" value={modelId} onChange={handleModelChange}
-                options={brand?.models.map((m) => ({ id: m.id, label: m.name })) || []}
-                placeholder="— Модель —" disabled={!brandId} />
-              <SelectBox label="Поколение" value={generationId} onChange={handleGenerationChange}
-                options={model?.generations.map((g) => ({ id: g.id, label: `${g.name} (${g.years})` })) || []}
-                placeholder="— Поколение —" disabled={!modelId} />
-              <SelectBox label="Модификация" value={modificationId} onChange={handleModChange}
-                options={generation?.modifications.map((m) => ({ id: m.id, label: m.name })) || []}
-                placeholder="— Модификация —" disabled={!generationId} />
+            <div className="p-5 space-y-4">
+              {/* Строка 1: Марка / Модель / Поколение */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <SelectBox label="Марка" value={brandId} onChange={handleBrandChange}
+                  options={carDatabase.map((b) => ({ id: b.id, label: b.name }))} placeholder="— Марка —" />
+                <SelectBox label="Модель" value={modelId} onChange={handleModelChange}
+                  options={brand?.models.map((m) => ({ id: m.id, label: m.name })) || []}
+                  placeholder="— Модель —" disabled={!brandId} />
+                <SelectBox label="Поколение" value={generationId} onChange={handleGenerationChange}
+                  options={model?.generations.map((g) => ({ id: g.id, label: `${g.name} (${g.years})` })) || []}
+                  placeholder="— Поколение —" disabled={!modelId} />
+              </div>
+
+              {/* Строка 2: фильтры модификации (только если выбрано поколение) */}
+              {generationId && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <SelectBox label="Тип двигателя" value={filterEngineType} onChange={handleFilterEngineType}
+                    options={engineTypeOptions} placeholder="— Любой —"
+                    disabled={engineTypeOptions.length === 0} />
+                  <SelectBox label="Номер двигателя" value={filterEngineCode} onChange={handleFilterEngineCode}
+                    options={engineCodeOptions} placeholder="— Любой —"
+                    disabled={engineCodeOptions.length === 0} />
+                  <SelectBox label="КПП" value={filterTransmission} onChange={handleFilterTransmission}
+                    options={transmissionOptions} placeholder="— Любая —"
+                    disabled={transmissionOptions.length === 0} />
+                  <SelectBox label="Привод" value={filterDrive} onChange={handleFilterDrive}
+                    options={driveOptions} placeholder="— Любой —"
+                    disabled={driveOptions.length === 0} />
+                </div>
+              )}
+
+              {/* Строка 3: выбор конкретной модификации */}
+              {generationId && (
+                <SelectBox label="Модификация" value={modificationId} onChange={handleModChange}
+                  options={filteredMods.map((m) => ({ id: m.id, label: m.name }))}
+                  placeholder={filteredMods.length === 0 ? "— Нет совпадений —" : "— Выберите модификацию —"} />
+              )}
             </div>
             {modification && (
               <div className="mx-5 mb-5 p-3 bg-blue-50 border border-blue-100 rounded-md flex flex-wrap gap-5 text-xs animate-fade-in">
                 <span><span className="text-muted-foreground">Двигатель: </span><strong>{modification.engine}</strong></span>
+                {modification.engineCode && <span><span className="text-muted-foreground">Код: </span><strong>{modification.engineCode}</strong></span>}
                 <span><span className="text-muted-foreground">КПП: </span><strong>{modification.transmission}</strong></span>
+                {modification.driveType && <span><span className="text-muted-foreground">Привод: </span><strong>{modification.driveType}</strong></span>}
                 <span><span className="text-muted-foreground">Мощность: </span><strong>{modification.power}</strong></span>
                 <span><span className="text-muted-foreground">Работ в базе: </span><strong>{works.length}</strong></span>
               </div>

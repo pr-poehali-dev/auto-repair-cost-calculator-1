@@ -11,6 +11,11 @@ export interface Modification {
   transmission: string;
   power: string;
   works: Work[];
+  // Расширенные поля из Excel
+  engineType?: string;
+  engineCode?: string;
+  driveType?: string;
+  [key: string]: unknown;
 }
 
 export interface Generation {
