@@ -114,16 +114,18 @@ def process_rows(cur, rows):
             gens_batch.append((gen_id, model_id, gen_label or mod_name, years))
             gens_seen.add(gen_id)
 
+        # AG=32: Тип двигателя, AT=45: Номер двигателя, BB=53: Тип КПП, BD=55: Привод
         engine_type = g(row, 32); engine_volume_cc = g(row, 33)
         power_val = g(row, 34); power_rpm = g(row, 35); torque_nm = g(row, 36)
         intake_type = g(row, 37); cylinder_layout = g(row, 38); cylinder_count = g(row, 39)
         compression_ratio = g(row, 40); valves_per_cylinder = g(row, 41); turbo_type = g(row, 42)
-        bore_mm = g(row, 43); stroke_mm = g(row, 44); engine_model = g(row, 45)
-        engine_location = g(row, 46); power_kw = g(row, 47); torque_rpm = g(row, 48)
-        intercooler = g(row, 49); engine_code = g(row, 50); timing_system = g(row, 51)
+        bore_mm = g(row, 43); stroke_mm = g(row, 44)
+        engine_code = g(row, 45)  # AT=45: Номер двигателя
+        engine_model = g(row, 46); engine_location = g(row, 47); power_kw = g(row, 48)
+        torque_rpm = g(row, 49); intercooler = g(row, 50); timing_system = g(row, 51)
         fuel_consumption_method = g(row, 52)
-        transmission = g(row, 53) or "—"; gear_count = g(row, 54)
-        drive_type = g(row, 55); turning_diameter_m = g(row, 56)
+        transmission = g(row, 53) or "—"; gear_count = g(row, 54)  # BB=53: Тип КПП
+        drive_type = g(row, 55); turning_diameter_m = g(row, 56)   # BD=55: Привод
         fuel_type = g(row, 57); max_speed_kmh = g(row, 58); acceleration_100 = g(row, 59)
         fuel_tank_l = g(row, 60); eco_standard = g(row, 61)
         fuel_city_l = g(row, 62); fuel_highway_l = g(row, 63); fuel_mixed_l = g(row, 64)

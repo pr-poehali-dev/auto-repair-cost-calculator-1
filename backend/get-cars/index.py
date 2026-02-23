@@ -152,11 +152,13 @@ def handler(event: dict, context) -> dict:
         if r[1] in models:
             models[r[1]]["generations"].append(gens[r[0]])
 
-    cur.execute("SELECT id, generation_id, name, engine, transmission, power FROM car_modifications ORDER BY name")
+    cur.execute("SELECT id, generation_id, name, engine, transmission, power, engine_type, engine_code, drive_type FROM car_modifications ORDER BY name")
     for r in cur.fetchall():
         if r[1] in gens:
             gens[r[1]]["modifications"].append({
-                "id": r[0], "name": r[2], "engine": r[3] or "", "transmission": r[4] or "—", "power": r[5] or "—", "works": []
+                "id": r[0], "name": r[2], "engine": r[3] or "", "transmission": r[4] or "—", "power": r[5] or "—",
+                "engineType": r[6] or "", "engineCode": r[7] or "", "driveType": r[8] or "",
+                "works": []
             })
 
     cur.close()
