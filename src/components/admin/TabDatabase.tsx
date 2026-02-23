@@ -43,9 +43,6 @@ const TabDatabase = () => {
         if (first === "марка" || first === "brand") { headerIdx = i; break; }
       }
       const headerRow = allRows[headerIdx] as string[];
-      // Показываем заголовок для диагностики
-      setCarsStatus({ type: "success", msg: `[ДИАГНОСТИКА] Заголовок (первые 10 колонок): ${headerRow.slice(0, 10).join(" | ")} ... Всего колонок: ${headerRow.length}. Первая строка данных [32..56]: ${(allRows[headerIdx+1] as unknown[] ?? []).slice(32, 57).join(" | ")}` });
-      return;
       const dataRows = allRows.slice(headerIdx + 1).filter(r => r.some(c => c !== ""));
 
       if (dataRows.length === 0) {

@@ -284,11 +284,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         const data = new Uint8Array(ev.target!.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: "array" });
         const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-        if (rows.length > 0) {
-          const keys = Object.keys(rows[0]);
-          onError(`[ДИАГНОСТИКА] Всего колонок: ${keys.length}. Колонки 30-58: ${keys.slice(30, 58).join(" | ")}`);
-          return;
-        }
         const cars = parseCarBase(rows);
         if (!cars || cars.length === 0) onError("Не удалось распознать автомобили. Скачайте шаблон и проверьте формат.");
         else onResult(cars);

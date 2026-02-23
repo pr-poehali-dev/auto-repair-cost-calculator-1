@@ -144,13 +144,16 @@ export function parseCarBase(rows: Record<string, unknown>[]): CarBrand[] | null
   if (rows.length === 0) return null;
   const keys = Object.keys(rows[0]);
   if (keys.length < 7) return null;
-  // Читаем строго по позиции столбца (0-based)
-  const get = (row: Record<string, unknown>, i: number) => String(row[keys[i]] ?? "").trim();
+  // Читаем по имени колонки (приоритет) или по позиции (fallback)
+  const byName = (row: Record<string, unknown>, name: string) => String(row[name] ?? "").trim();
+  const byIdx = (row: Record<string, unknown>, i: number) => String(row[keys[i]] ?? "").trim();
+  const get = (row: Record<string, unknown>, name: string, i: number) =>
+    Object.prototype.hasOwnProperty.call(row, name) ? byName(row, name) : byIdx(row, i);
   const brandsMap = new Map<string, CarBrand>();
   rows.forEach((row) => {
-    const brandName = get(row, 0), modelName = get(row, 1), genName = get(row, 2);
-    const yearsFrom = get(row, 3), yearsTo = get(row, 4), series = get(row, 5);
-    const modName = get(row, 6);
+    const brandName = get(row, "Марка", 0), modelName = get(row, "Модель", 1), genName = get(row, "Поколение", 2);
+    const yearsFrom = get(row, "Год от (Поколение)", 3), yearsTo = get(row, "Год до (Поколение)", 4);
+    const series = get(row, "Серия", 5), modName = get(row, "Модификация", 6);
     if (!brandName || !modelName || !modName) return;
     const years = yearsTo ? `${yearsFrom} — ${yearsTo}` : yearsFrom;
     const genLabel = series ? `${genName} ${series}`.trim() : genName;
@@ -165,40 +168,49 @@ export function parseCarBase(rows: Record<string, unknown>[]): CarBrand[] | null
     let gen = model.generations.find((g) => g.id === genId);
     if (!gen) { gen = { id: genId, name: genLabel || modName, years, modifications: [] }; model.generations.push(gen); }
     if (gen.modifications.find((m) => m.id === modId)) return;
-    const bodyType = get(row, 7), seats = get(row, 8);
-    const lengthMm = get(row, 9), widthMm = get(row, 10), heightMm = get(row, 11), wheelbaseMm = get(row, 12);
-    const trackFrontMm = get(row, 13), trackRearMm = get(row, 14), curbWeightKg = get(row, 15);
-    const wheelSize = get(row, 16), groundClearanceMm = get(row, 17);
-    const trunkMaxL = get(row, 18), trunkMinL = get(row, 19), grossWeightKg = get(row, 20);
-    const diskSize = get(row, 21), clearanceMm = get(row, 22);
-    const trackFrontWidthMm = get(row, 23), trackRearWidthMm = get(row, 24);
-    const payloadKg = get(row, 25), trainWeightKg = get(row, 26), axleLoadKg = get(row, 27);
-    const loadingHeightMm = get(row, 28), cargoCompartmentDims = get(row, 29), cargoVolumeM3 = get(row, 30);
-    const boltPattern = get(row, 31);
-    // AG=32: Тип двигателя
-    const engineType = get(row, 32), engineVolumeCC = get(row, 33);
-    const power = get(row, 34) || "—", powerRpm = get(row, 35), torqueNm = get(row, 36);
-    const intakeType = get(row, 37), cylinderLayout = get(row, 38), cylinderCount = get(row, 39);
-    const compressionRatio = get(row, 40), valvesPerCylinder = get(row, 41), turboType = get(row, 42);
-    const boreMm = get(row, 43), strokeMm = get(row, 44);
-    // AT=45: Номер (код) двигателя
-    const engineCode = get(row, 45);
-    const engineModel = get(row, 46), engineLocation = get(row, 47);
-    const powerKw = get(row, 48), torqueRpm = get(row, 49), intercooler = get(row, 50);
-    const timingSystem = get(row, 51);
-    const fuelConsumptionMethod = get(row, 52);
-    // BB=53: Тип КПП, BC=54: Количество передач, BD=55: Привод
-    const transmission = get(row, 53) || "—", gearCount = get(row, 54);
-    const driveType = get(row, 55), turningDiameterM = get(row, 56);
-    const fuelType = get(row, 57), maxSpeedKmh = get(row, 58), acceleration100 = get(row, 59);
-    const fuelTankL = get(row, 60), ecoStandard = get(row, 61);
-    const fuelCityL = get(row, 62), fuelHighwayL = get(row, 63), fuelMixedL = get(row, 64);
-    const rangeKm = get(row, 65), co2GKm = get(row, 66);
-    const frontBrakes = get(row, 67), rearBrakes = get(row, 68);
-    const frontSuspension = get(row, 69), rearSuspension = get(row, 70);
-    const doorsCount = get(row, 71), countryOfOrigin = get(row, 72);
-    const vehicleClass = get(row, 73), steeringPosition = get(row, 74);
-    const safetyRating = get(row, 75), safetyRatingName = get(row, 76);
+    const bodyType = get(row, "Тип кузова", 7), seats = get(row, "Количество мест", 8);
+    const lengthMm = get(row, "Длина [мм]", 9), widthMm = get(row, "Ширина [мм]", 10);
+    const heightMm = get(row, "Высота [мм]", 11), wheelbaseMm = get(row, "Колёсная база [мм]", 12);
+    const trackFrontMm = get(row, "Колея передняя [мм]", 13), trackRearMm = get(row, "Колея задняя [мм]", 14);
+    const curbWeightKg = get(row, "Снаряженная масса [кг]", 15);
+    const wheelSize = get(row, "Размер колёс", 16), groundClearanceMm = get(row, "Дорожный просвет [мм]", 17);
+    const trunkMaxL = get(row, "Объем багажника максимальный [л]", 18), trunkMinL = get(row, "Объем багажника минимальный [л]", 19);
+    const grossWeightKg = get(row, "Полная масса [кг]", 20), diskSize = get(row, "Размер дисков", 21);
+    const clearanceMm = get(row, "Клиренс [мм]", 22);
+    const trackFrontWidthMm = get(row, "Ширина передней колеи [мм]", 23), trackRearWidthMm = get(row, "Ширина задней колеи [мм]", 24);
+    const payloadKg = get(row, "Грузоподъёмность [кг]", 25), trainWeightKg = get(row, "Разрешённая масса автопоезда [кг]", 26);
+    const axleLoadKg = get(row, "Нагрузка на переднюю/заднюю ось [кг]", 27);
+    const loadingHeightMm = get(row, "Погрузочная высота [мм]", 28);
+    const cargoCompartmentDims = get(row, "Грузовой отсек (Длина x Ширина x Высота) [мм]", 29);
+    const cargoVolumeM3 = get(row, "Объём грузового отсека [м3]", 30), boltPattern = get(row, "Сверловка [мм]", 31);
+    const engineType = get(row, "Тип двигателя", 32), engineVolumeCC = get(row, "Объем двигателя [см3]", 33);
+    const power = get(row, "Мощность двигателя [л.с.]", 34) || "—";
+    const powerRpm = get(row, "Обороты максимальной мощности [об/мин]", 35);
+    const torqueNm = get(row, "Максимальный крутящий момент [Н*м]", 36);
+    const intakeType = get(row, "Тип впуска", 37), cylinderLayout = get(row, "Расположение цилиндров", 38);
+    const cylinderCount = get(row, "Количество цилиндров", 39), compressionRatio = get(row, "Степень сжатия", 40);
+    const valvesPerCylinder = get(row, "Количество клапанов на цилиндр", 41), turboType = get(row, "Тип наддува", 42);
+    const boreMm = get(row, "Диаметр цилиндра [мм]", 43), strokeMm = get(row, "Ход поршня [мм]", 44);
+    const engineModel = get(row, "Модель двигателя", 45), engineLocation = get(row, "Расположение двигателя", 46);
+    const powerKw = get(row, "Максимальная мощность (кВт) [кВт]", 47);
+    const torqueRpm = get(row, "Обороты максимального крутящего момента [об/мин]", 48);
+    const intercooler = get(row, "Наличие интеркулера", 49);
+    const engineCode = get(row, "Код двигателя", 50);
+    const timingSystem = get(row, "ГРМ", 51), fuelConsumptionMethod = get(row, "Методика расчета расхода", 52);
+    const transmission = get(row, "Тип КПП", 53) || "—", gearCount = get(row, "Количество передач", 54);
+    const driveType = get(row, "Привод", 55), turningDiameterM = get(row, "Диаметр разворота [м]", 56);
+    const fuelType = get(row, "Марка топлива", 57), maxSpeedKmh = get(row, "Максимальная скорость [км/ч]", 58);
+    const acceleration100 = get(row, "Разгон до 100 км/ч [сек]", 59), fuelTankL = get(row, "Объём топливного бака [л]", 60);
+    const ecoStandard = get(row, "Экологический стандарт", 61);
+    const fuelCityL = get(row, "Расход топлива в городе на 100 км [л]", 62);
+    const fuelHighwayL = get(row, "Расход топлива на шоссе на 100 км [л]", 63);
+    const fuelMixedL = get(row, "Расход топлива в смешанном цикле на 100 км [л]", 64);
+    const rangeKm = get(row, "Запас хода [км]", 65), co2GKm = get(row, "Выбросы CO2 [г/км]", 66);
+    const frontBrakes = get(row, "Передние тормоза", 67), rearBrakes = get(row, "Задние тормоза", 68);
+    const frontSuspension = get(row, "Передняя подвеска", 69), rearSuspension = get(row, "Задняя подвеска", 70);
+    const doorsCount = get(row, "Количество дверей", 71), countryOfOrigin = get(row, "Страна марки", 72);
+    const vehicleClass = get(row, "Класс автомобиля", 73), steeringPosition = get(row, "Расположение руля", 74);
+    const safetyRating = get(row, "Оценка безопасности", 75), safetyRatingName = get(row, "Название рейтинга", 76);
     const engineParts = [engineType, engineVolumeCC ? `${engineVolumeCC} см³` : "", power ? `${power} л.с.` : ""].filter(Boolean);
     const engine = engineParts.join(" ") || modName;
     gen.modifications.push({
