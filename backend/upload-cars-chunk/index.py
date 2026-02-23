@@ -278,6 +278,13 @@ def handler(event: dict, context) -> dict:
 
     col_idx = make_col_index(header) if header else {}
 
+    # DEBUG: выводим заголовок и col_idx для диагностики
+    if chunk == 0:
+        print(f"[DEBUG] header (first 10): {header[:10]}")
+        print(f"[DEBUG] col_idx keys (sample): {list(col_idx.keys())[:15]}")
+        if rows:
+            print(f"[DEBUG] first row (first 10 vals): {rows[0][:10]}")
+
     conn = get_conn()
     cur = conn.cursor()
 
