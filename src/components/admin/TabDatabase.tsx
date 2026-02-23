@@ -42,6 +42,7 @@ const TabDatabase = () => {
         const first = String(allRows[i][0] ?? "").trim().toLowerCase();
         if (first === "марка" || first === "brand") { headerIdx = i; break; }
       }
+      const headerRow = allRows[headerIdx] as string[];
       const dataRows = allRows.slice(headerIdx + 1).filter(r => r.some(c => c !== ""));
 
       if (dataRows.length === 0) {
@@ -67,6 +68,7 @@ const TabDatabase = () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            header: headerRow,
             rows: chunks[ci],
             chunk: ci,
             total_chunks: chunks.length,
