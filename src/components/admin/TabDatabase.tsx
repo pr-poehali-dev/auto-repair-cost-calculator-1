@@ -43,6 +43,8 @@ const TabDatabase = () => {
         if (first === "марка" || first === "brand") { headerIdx = i; break; }
       }
       const headerRow = allRows[headerIdx] as string[];
+      console.log("[DEBUG] headerRow:", headerRow);
+      console.log("[DEBUG] first data row:", allRows[headerIdx + 1]);
       const dataRows = allRows.slice(headerIdx + 1).filter(r => r.some(c => c !== ""));
 
       if (dataRows.length === 0) {
