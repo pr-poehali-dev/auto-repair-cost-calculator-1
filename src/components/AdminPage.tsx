@@ -427,7 +427,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
               <div className="border-t border-border pt-5 space-y-4">
                 {/* Step 1 */}
                 <UploadBlock title="Шаг 1 — Загрузите базу автомобилей"
-                  description="Каждая строка — одна модификация: Марка | Модель | Поколение | Годы от | Годы до | Серия | Модификация | Двигатель | КПП | Мощность"
+                  description="Файл должен содержать колонки с точными названиями. Ключевые колонки для фильтров показаны ниже."
                   buttonLabel="Загрузить базу авто (.xlsx)" accept=".xlsx,.xls"
                   onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars}
                   onDownloadTemplate={downloadCarsTemplate} status={carsStatus}>
@@ -435,19 +435,19 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                     <table className="text-xs w-full border-collapse">
                       <thead>
                         <tr className="bg-[hsl(215,70%,22%)] text-white">
-                          {["Марка","Модель","Поколение","Годы от","Годы до","Серия","Модификация","Двигатель","КПП","Мощность"].map((h) => (
-                            <th key={h} className="px-2 py-1.5 text-center whitespace-nowrap border-r border-blue-800 last:border-0">{h}</th>
+                          {["Марка","Модель","Поколение","Год от (Поколение)","Год до (Поколение)","Серия","Модификация","…","Тип двигателя","Мощность двигателя [л.с.]","…","Код двигателя","…","Тип КПП","Кол-во передач","Привод"].map((h) => (
+                            <th key={h} className={`px-2 py-1.5 text-center whitespace-nowrap border-r border-blue-800 last:border-0 ${h === "…" ? "text-blue-300" : ""}`}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {[
-                          ["Toyota","Camry","VII (V70)","2017","н.в.","SE","2.5 AT","2.5 бенз.","Автомат","181 л.с."],
-                          ["Toyota","Camry","VII (V70)","2017","н.в.","SE","3.5 AT","3.5 бенз.","Автомат","249 л.с."],
-                          ["BMW","3 Series","G20","2018","н.в.","","320i AT","2.0 бенз.","Автомат","184 л.с."],
+                          ["Toyota","Camry","VII (V70)","2017","н.в.","SE","2.5 AT","…","Бензин","181","…","2AR-FE","…","Автомат","6","Передний"],
+                          ["Toyota","Camry","VII (V70)","2017","н.в.","SE","3.5 AT","…","Бензин","249","…","2GR-FE","…","Автомат","6","Передний"],
+                          ["BMW","3 Series","G20","2018","н.в.","","320d AT","…","Дизель","190","…","B47D20","…","Автомат","8","Задний"],
                         ].map((row, i) => (
                           <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                            {row.map((c, j) => <td key={j} className="px-2 py-1.5 border-r border-b border-border text-center text-gray-600 last:border-r-0">{c}</td>)}
+                            {row.map((c, j) => <td key={j} className={`px-2 py-1.5 border-r border-b border-border text-center last:border-r-0 ${c === "…" ? "text-gray-300" : "text-gray-600"}`}>{c}</td>)}
                           </tr>
                         ))}
                       </tbody>
