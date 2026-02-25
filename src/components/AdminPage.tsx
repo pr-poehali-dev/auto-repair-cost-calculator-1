@@ -272,32 +272,6 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleFetchFromDisk = async (urlOverride?: string) => {
-    const url = (urlOverride ?? urlInput).trim();
-    if (!url) { setUrlStatus({ type: "error", msg: "Введите ссылку на файл Яндекс.Диска" }); return; }
-    setUrlLoading(true);
-    setUrlStatus(null);
-    setCarsStatus(null);
-    try {
-      const res = await fetch(FUNC_FETCH_YANDEX_FILE, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const raw = await res.json();
-      const data = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (!res.ok || data.error) throw new Error(data.error || "Ошибка загрузки файла");
-      setCarsUrl(url);
-      await reloadCarDb();
-      setUrlStatus({ type: "success", msg: `Загружено ${data.inserted?.toLocaleString("ru-RU")} модификаций с Яндекс.Диска` });
-      setCarsStatus({ type: "success", msg: `Загружено ${data.inserted?.toLocaleString("ru-RU")} модификаций. Пропущено строк: ${data.skipped ?? 0}.` });
-    } catch (e) {
-      setUrlStatus({ type: "error", msg: e instanceof Error ? e.message : "Неизвестная ошибка" });
-    } finally {
-      setUrlLoading(false);
-    }
-  };
-
   const handleCarsFile = (file: File) => parseCarsFile(file, (cars) => {
     const withWorks = reapplyWorks(cars, pendingCars ?? carDatabase);
     const total = withWorks.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
@@ -315,6 +289,35 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     if (worksDatabase.length > 0) setPendingWorks(worksDatabase);
     setCarsStatus({ type: "success", msg: `Обновлено. Нормативы существующих моделей сохранены.` });
   }, (msg) => setCarsStatus({ type: "error", msg }));
+
+  const handleFetchFromDisk = async (urlOverride?: string) => {
+    const url = (urlOverride ?? urlInput).trim();
+    if (!url) { setUrlStatus({ type: "error", msg: "Введите ссылку на файл Яндекс.Диска" }); return; }
+    setUrlLoading(true);
+    setUrlStatus(null);
+    setCarsStatus(null);
+    try {
+      const res = await fetch(FUNC_FETCH_YANDEX_FILE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const raw = await res.json();
+      const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!res.ok || data.error) throw new Error(data.error || "Ошибка получения ссылки");
+      const fileRes = await fetch(data.download_url);
+      if (!fileRes.ok) throw new Error("Не удалось скачать файл с Яндекс.Диска");
+      const blob = await fileRes.blob();
+      const file = new File([blob], "yandex-disk.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      setCarsUrl(url);
+      setUrlStatus({ type: "success", msg: "Файл получен, обрабатываю…" });
+      handleCarsFile(file);
+    } catch (e) {
+      setUrlStatus({ type: "error", msg: e instanceof Error ? e.message : "Неизвестная ошибка" });
+    } finally {
+      setUrlLoading(false);
+    }
+  };
 
   const handleWorksFile = (file: File) => parseWorksFile(file, (works) => {
     setPendingWorks(works); setWorksDatabase(works); setWorksStatus({ type: "success", msg: `Загружено ${works.length} видов работ из «${file.name}»` });
