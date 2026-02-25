@@ -64,12 +64,17 @@ def make_id(*parts):
 def g(row, i):
     v = row[i] if i < len(row) else None
     s = str(v).strip() if v is not None else ""
-    return "" if s in ("None", "none", "") else s
+    return None if s in ("None", "none", "") else s
 
 
 def gc(row, col_idx, col_name, fallback_i):
     i = col_idx.get(col_name.lower())
     return g(row, i) if i is not None else g(row, fallback_i)
+
+
+def n(val):
+    """Пустую строку превращает в None для числовых полей PostgreSQL."""
+    return val if val != "" else None
 
 
 def process_chunk(cur, rows, col_idx, is_first, mode):
@@ -116,7 +121,7 @@ def process_chunk(cur, rows, col_idx, is_first, mode):
         engine_type      = f("тип двигателя", 32)
         engine_volume_cc = f("объем двигателя [см3]", 33)
         power_val        = f("мощность двигателя [л.с.]", 34)
-        parts = [p for p in [engine_type, f"{engine_volume_cc} см³" if engine_volume_cc else "", f"{power_val} л.с." if power_val else ""] if p]
+        parts = [p for p in [engine_type, f"{engine_volume_cc} см³" if engine_volume_cc else None, f"{power_val} л.с." if power_val else None] if p]
         engine      = " ".join(parts) if parts else mod_name
         power       = power_val or "—"
         transmission = f("тип кпп", 53) or "—"
