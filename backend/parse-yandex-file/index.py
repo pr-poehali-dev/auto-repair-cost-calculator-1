@@ -1,6 +1,8 @@
 """
-Читает xlsx из S3 (загруженный fetch-yandex-file), парсит и сохраняет в БД напрямую.
-POST { mode: "replace"|"merge" } → { inserted, skipped, total_rows }
+Читает xlsx из S3 по одному чанку за вызов.
+POST { chunk: 0, chunk_size: 300, mode: "replace"|"merge" }
+→ { inserted, skipped, total_rows, total_chunks, done: bool }
+Фронт вызывает последовательно chunk=0,1,2,... пока done=true.
 """
 import json
 import os
@@ -17,7 +19,7 @@ CORS_HEADERS = {
 }
 
 S3_KEY = "tmp/yandex-disk-cars.xlsx"
-CHUNK_SIZE = 500
+S3_META_KEY = "tmp/yandex-disk-cars-meta.json"
 
 INSERT_MOD = """
     INSERT INTO car_modifications (
@@ -56,34 +58,23 @@ INSERT_MOD = """
 def slug(s):
     return re.sub(r"[\s()/\\]+", "-", s.lower()).strip("-")
 
-
 def make_id(*parts):
     return "__".join(slug(p) for p in parts if p)
-
 
 def g(row, i):
     v = row[i] if i < len(row) else None
     s = str(v).strip() if v is not None else ""
     return None if s in ("None", "none", "") else s
 
-
 def gc(row, col_idx, col_name, fallback_i):
     i = col_idx.get(col_name.lower())
     return g(row, i) if i is not None else g(row, fallback_i)
 
 
-def n(val):
-    """Пустую строку превращает в None для числовых полей PostgreSQL."""
-    return val if val != "" else None
-
-
-def process_chunk(cur, rows, col_idx, is_first, mode):
+def process_rows(cur, rows, col_idx):
     brands_batch, models_batch, gens_batch, mods_batch = [], [], [], []
     brands_seen, models_seen, gens_seen, mods_seen = set(), set(), set(), set()
     total = skipped = 0
-
-    if is_first and mode == "replace":
-        cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
 
     for row in rows:
         brand_name = gc(row, col_idx, "марка", 0)
@@ -95,19 +86,17 @@ def process_chunk(cur, rows, col_idx, is_first, mode):
         mod_name   = gc(row, col_idx, "модификация", 6)
 
         if not brand_name or not model_name or not mod_name:
-            skipped += 1
-            continue
+            skipped += 1; continue
 
-        years     = f"{year_from} — {year_to}" if year_to else year_from
-        gen_label = f"{gen_name} {series}".strip() if series else gen_name
+        years     = f"{year_from} — {year_to}" if year_to else (year_from or "")
+        gen_label = f"{gen_name} {series}".strip() if series else (gen_name or "")
         brand_id  = slug(brand_name)
         model_id  = make_id(brand_id, model_name)
         gen_id    = make_id(model_id, gen_label or mod_name)
         mod_id    = make_id(gen_id, mod_name)
 
         if mod_id in mods_seen:
-            skipped += 1
-            continue
+            skipped += 1; continue
 
         if brand_id not in brands_seen:
             brands_batch.append((brand_id, brand_name)); brands_seen.add(brand_id)
@@ -122,8 +111,8 @@ def process_chunk(cur, rows, col_idx, is_first, mode):
         engine_volume_cc = f("объем двигателя [см3]", 33)
         power_val        = f("мощность двигателя [л.с.]", 34)
         parts = [p for p in [engine_type, f"{engine_volume_cc} см³" if engine_volume_cc else None, f"{power_val} л.с." if power_val else None] if p]
-        engine      = " ".join(parts) if parts else mod_name
-        power       = power_val or "—"
+        engine       = " ".join(parts) if parts else mod_name
+        power        = power_val or "—"
         transmission = f("тип кпп", 53) or "—"
 
         mods_batch.append((
@@ -179,68 +168,102 @@ def process_chunk(cur, rows, col_idx, is_first, mode):
     return total, skipped
 
 
-def handler(event: dict, context) -> dict:
-    """Читает xlsx из S3 и сохраняет в БД напрямую (без HTTP-вызовов к другим функциям)."""
-    if event.get("httpMethod") == "OPTIONS":
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
-
-    try:
-        body = json.loads(event.get("body") or "{}")
-        mode = body.get("mode", "replace")
-    except Exception:
-        mode = "replace"
-
-    # 1. Читаем файл из S3
-    s3 = boto3.client(
+def get_s3():
+    return boto3.client(
         "s3",
         endpoint_url="https://bucket.poehali.dev",
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
     )
-    obj = s3.get_object(Bucket="files", Key=S3_KEY)
-    file_bytes = obj["Body"].read()
 
-    # 2. Парсим xlsx
-    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
-    ws = wb.active
-    all_rows = []
-    for row in ws.iter_rows(values_only=True):
-        all_rows.append([str(c) if c is not None else "" for c in row])
-    wb.close()
 
-    if len(all_rows) < 2:
-        return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Файл пустой"})}
+def handler(event: dict, context) -> dict:
+    """Обрабатывает один чанк xlsx из S3 и пишет в БД. Фронт вызывает последовательно."""
+    if event.get("httpMethod") == "OPTIONS":
+        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
 
-    header_idx = 0
-    for i in range(min(5, len(all_rows))):
-        if str(all_rows[i][0]).strip().lower() in ("марка", "brand"):
-            header_idx = i
-            break
+    try:
+        body = json.loads(event.get("body") or "{}")
+        chunk_index = int(body.get("chunk", 0))
+        chunk_size  = int(body.get("chunk_size", 300))
+        mode        = body.get("mode", "replace")
+    except Exception:
+        return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Неверные параметры"})}
 
-    header_row = all_rows[header_idx]
-    col_idx = {str(h).strip().lower(): i for i, h in enumerate(header_row)}
-    data_rows = [r for r in all_rows[header_idx + 1:] if any(c != "" for c in r)]
+    s3 = get_s3()
 
-    if not data_rows:
-        return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Нет строк с данными"})}
+    # На первом чанке — читаем и парсим весь файл, сохраняем строки в S3 как JSON
+    if chunk_index == 0:
+        obj = s3.get_object(Bucket="files", Key=S3_KEY)
+        file_bytes = obj["Body"].read()
 
-    # 3. Пишем в БД чанками напрямую
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    cur = conn.cursor()
-    total_inserted = total_skipped = 0
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+        ws = wb.active
+        all_rows = [[str(c) if c is not None else "" for c in row] for row in ws.iter_rows(values_only=True)]
+        wb.close()
 
-    chunks = [data_rows[i:i + CHUNK_SIZE] for i in range(0, len(data_rows), CHUNK_SIZE)]
-    for ci, chunk in enumerate(chunks):
-        ins, skp = process_chunk(cur, chunk, col_idx, ci == 0, mode)
-        conn.commit()
-        total_inserted += ins
-        total_skipped  += skp
+        if len(all_rows) < 2:
+            return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Файл пустой"})}
 
-    cur.close()
-    conn.close()
+        header_idx = 0
+        for i in range(min(5, len(all_rows))):
+            if str(all_rows[i][0]).strip().lower() in ("марка", "brand"):
+                header_idx = i; break
 
-    return {
-        "statusCode": 200,
-        "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-        "body": json.dumps({"inserted": total_inserted, "skipped": total_skipped, "total_rows": len(data_rows)}),
-    }
+        header_row = all_rows[header_idx]
+        data_rows  = [r for r in all_rows[header_idx + 1:] if any(c for c in r)]
+
+        meta = {"header": header_row, "total_rows": len(data_rows), "chunk_size": chunk_size}
+        s3.put_object(Bucket="files", Key=S3_META_KEY, Body=json.dumps(meta, ensure_ascii=False).encode("utf-8"), ContentType="application/json")
+        # Сохраняем строки порциями
+        for ci in range(0, len(data_rows), chunk_size):
+            s3.put_object(
+                Bucket="files",
+                Key=f"tmp/yandex-disk-rows-{ci // chunk_size}.json",
+                Body=json.dumps(data_rows[ci:ci + chunk_size], ensure_ascii=False).encode("utf-8"),
+                ContentType="application/json",
+            )
+
+        total_chunks = (len(data_rows) + chunk_size - 1) // chunk_size
+
+        # Очищаем БД если replace
+        if mode == "replace":
+            conn = psycopg2.connect(os.environ["DATABASE_URL"])
+            cur = conn.cursor()
+            cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
+            conn.commit(); cur.close(); conn.close()
+
+        # Обрабатываем первый чанк сразу
+        col_idx = {str(h).strip().lower(): i for i, h in enumerate(header_row)}
+        rows_chunk = data_rows[:chunk_size]
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cur = conn.cursor()
+        ins, skp = process_rows(cur, rows_chunk, col_idx)
+        conn.commit(); cur.close(); conn.close()
+
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({
+            "inserted": ins, "skipped": skp, "total_rows": len(data_rows),
+            "total_chunks": total_chunks, "chunk": 0, "done": total_chunks <= 1,
+        })}
+
+    else:
+        # Последующие чанки — читаем из S3
+        meta_obj = s3.get_object(Bucket="files", Key=S3_META_KEY)
+        meta = json.loads(meta_obj["Body"].read().decode("utf-8"))
+        header_row   = meta["header"]
+        total_rows   = meta["total_rows"]
+        col_idx      = {str(h).strip().lower(): i for i, h in enumerate(header_row)}
+        total_chunks = (total_rows + chunk_size - 1) // chunk_size
+
+        rows_obj = s3.get_object(Bucket="files", Key=f"tmp/yandex-disk-rows-{chunk_index}.json")
+        rows_chunk = json.loads(rows_obj["Body"].read().decode("utf-8"))
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cur = conn.cursor()
+        ins, skp = process_rows(cur, rows_chunk, col_idx)
+        conn.commit(); cur.close(); conn.close()
+
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({
+            "inserted": ins, "skipped": skp, "total_rows": total_rows,
+            "total_chunks": total_chunks, "chunk": chunk_index, "done": chunk_index >= total_chunks - 1,
+        })}

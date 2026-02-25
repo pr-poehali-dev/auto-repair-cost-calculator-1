@@ -307,20 +307,33 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
       const d1 = await res1.json().then(r => typeof r === "string" ? JSON.parse(r) : r);
       if (!res1.ok || d1.error) throw new Error(d1.error || "Ошибка скачивания файла");
 
-      // Шаг 2: парсим xlsx и загружаем в БД (~30–60 сек для большого файла)
-      setUrlStatus({ type: "success", msg: `Шаг 2/2: загружаю в базу данных (${(d1.size / 1024 / 1024).toFixed(1)} МБ)…` });
-      const res2 = await fetch(FUNC_PARSE_YANDEX_FILE, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "replace" }),
-      });
-      const d2 = await res2.json().then(r => typeof r === "string" ? JSON.parse(r) : r);
-      if (!res2.ok || d2.error) throw new Error(d2.error || "Ошибка загрузки в базу");
+      // Шаг 2: парсим xlsx и загружаем в БД по чанкам
+      const CHUNK_SIZE = 300;
+      let chunkIndex = 0;
+      let totalInserted = 0;
+      let totalSkipped = 0;
+      let totalChunks = 1;
+
+      do {
+        setUrlStatus({ type: "success", msg: `Шаг 2/2: загружаю в базу… чанк ${chunkIndex + 1}/${totalChunks}` });
+        const res2 = await fetch(FUNC_PARSE_YANDEX_FILE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chunk: chunkIndex, chunk_size: CHUNK_SIZE, mode: "replace" }),
+        });
+        const d2 = await res2.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { inserted?: number; skipped?: number; total_chunks?: number; done?: boolean; error?: string };
+        if (!res2.ok || d2.error) throw new Error(d2.error || "Ошибка загрузки в базу");
+        totalInserted += d2.inserted ?? 0;
+        totalSkipped += d2.skipped ?? 0;
+        totalChunks = d2.total_chunks ?? 1;
+        if (d2.done) break;
+        chunkIndex++;
+      } while (chunkIndex < totalChunks);
 
       setCarsUrl(url);
       await reloadCarDb();
-      setUrlStatus({ type: "success", msg: `Готово! Загружено ${d2.inserted?.toLocaleString("ru-RU")} модификаций с Яндекс.Диска` });
-      setCarsStatus({ type: "success", msg: `Загружено ${d2.inserted?.toLocaleString("ru-RU")} модификаций. Пропущено: ${d2.skipped ?? 0}.` });
+      setUrlStatus({ type: "success", msg: `Готово! Загружено ${totalInserted.toLocaleString("ru-RU")} модификаций с Яндекс.Диска` });
+      setCarsStatus({ type: "success", msg: `Загружено ${totalInserted.toLocaleString("ru-RU")} модификаций. Пропущено: ${totalSkipped}.` });
     } catch (e) {
       setUrlStatus({ type: "error", msg: e instanceof Error ? e.message : "Неизвестная ошибка" });
     } finally {
