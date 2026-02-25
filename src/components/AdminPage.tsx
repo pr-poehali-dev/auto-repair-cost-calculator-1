@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { CarBrand, Work } from "@/data/carDatabase";
-import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplateHelper, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_FILE } from "@/components/admin/adminHelpers";
+import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplateHelper, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_CHUNKS, FUNC_PARSE_YANDEX_FILE } from "@/components/admin/adminHelpers";
 import * as XLSX from "xlsx";
 import TabDashboard from "@/components/admin/TabDashboard";
 import TabBranches from "@/components/admin/TabBranches";
@@ -297,36 +297,45 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setUrlStatus(null);
     setCarsStatus(null);
     try {
-      // Шаг 1: скачиваем файл с Яндекс.Диска и сохраняем в S3 (~5 сек)
-      setUrlStatus({ type: "success", msg: "Шаг 1/2: скачиваю файл с Яндекс.Диска…" });
+      // Шаг 1: скачиваем файл с Яндекс.Диска в S3 (~3-5 сек)
+      setUrlStatus({ type: "success", msg: "Шаг 1/3: скачиваю файл с Яндекс.Диска…" });
       const res1 = await fetch(FUNC_FETCH_YANDEX_FILE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
-      const d1 = await res1.json().then(r => typeof r === "string" ? JSON.parse(r) : r);
-      if (!res1.ok || d1.error) throw new Error(d1.error || "Ошибка скачивания файла");
+      const d1 = await res1.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r);
+      if (!res1.ok || (d1 as { error?: string }).error) throw new Error((d1 as { error?: string }).error || "Ошибка скачивания файла");
 
-      // Шаг 2: парсим xlsx и загружаем в БД по чанкам
-      const CHUNK_SIZE = 300;
+      // Шаг 2: парсим xlsx и нарезаем на чанки (~15-25 сек)
+      setUrlStatus({ type: "success", msg: "Шаг 2/3: обрабатываю файл…" });
+      const res2 = await fetch(FUNC_PARSE_YANDEX_CHUNKS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const d2 = await res2.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { ok?: boolean; total_rows?: number; total_chunks?: number; error?: string };
+      if (!res2.ok || d2.error) throw new Error(d2.error || "Ошибка обработки файла");
+
+      // Шаг 3: загружаем чанки в БД
       let chunkIndex = 0;
       let totalInserted = 0;
       let totalSkipped = 0;
-      let totalChunks = 1;
+      let totalChunks = d2.total_chunks ?? 1;
 
       do {
-        setUrlStatus({ type: "success", msg: `Шаг 2/2: загружаю в базу… чанк ${chunkIndex + 1}/${totalChunks}` });
-        const res2 = await fetch(FUNC_PARSE_YANDEX_FILE, {
+        setUrlStatus({ type: "success", msg: `Шаг 3/3: загружаю в базу… чанк ${chunkIndex + 1}/${totalChunks}` });
+        const res3 = await fetch(FUNC_PARSE_YANDEX_FILE, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chunk: chunkIndex, mode: "replace" }),
         });
-        const d2 = await res2.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { inserted?: number; skipped?: number; total_chunks?: number; done?: boolean; error?: string };
-        if (!res2.ok || d2.error) throw new Error(d2.error || "Ошибка загрузки в базу");
-        totalInserted += d2.inserted ?? 0;
-        totalSkipped += d2.skipped ?? 0;
-        totalChunks = d2.total_chunks ?? 1;
-        if (d2.done) break;
+        const d3 = await res3.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { inserted?: number; skipped?: number; total_chunks?: number; done?: boolean; error?: string };
+        if (!res3.ok || d3.error) throw new Error(d3.error || "Ошибка загрузки в базу");
+        totalInserted += d3.inserted ?? 0;
+        totalSkipped += d3.skipped ?? 0;
+        totalChunks = d3.total_chunks ?? totalChunks;
+        if (d3.done) break;
         chunkIndex++;
       } while (chunkIndex < totalChunks);
 

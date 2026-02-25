@@ -4,7 +4,7 @@ import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { UploadBlock, StepBadge } from "@/components/admin/AdminUploadBlocks";
 import {
-  FUNC_UPLOAD_CARS_CHUNK, FUNC_FETCH_YANDEX_FILE, CAR_COLUMNS,
+  FUNC_UPLOAD_CARS_CHUNK, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_CHUNKS, FUNC_PARSE_YANDEX_FILE, CAR_COLUMNS,
   downloadCarsTemplate, downloadWorksTemplate,
   mergeWorks, parseWorksList, generateNormsTemplate, parseFilledTemplate,
   filterAndDownloadOldCars,
@@ -22,21 +22,54 @@ const TabDatabase = () => {
     if (!url) { setUrlStatus({ type: "error", msg: "Введите ссылку на файл Яндекс.Диска" }); return; }
     setUrlLoading(true);
     setUrlStatus(null);
+    setCarsStatus(null);
     try {
-      const res = await fetch(FUNC_FETCH_YANDEX_FILE, {
+      // Шаг 1: скачиваем файл в S3 (~3-5 сек)
+      setUrlStatus({ type: "success", msg: "Шаг 1/3: скачиваю файл с Яндекс.Диска…" });
+      const res1 = await fetch(FUNC_FETCH_YANDEX_FILE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
-      const raw = await res.json();
-      const data = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (!res.ok || data.error) throw new Error(data.error || "Ошибка загрузки файла");
-      // Декодируем base64 и передаём как File
-      const bytes = Uint8Array.from(atob(data.data), c => c.charCodeAt(0));
-      const file = new File([bytes], "yandex-disk.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      await uploadCarsToBackend(file, "replace");
+      const d1 = await res1.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { ok?: boolean; error?: string };
+      if (!res1.ok || d1.error) throw new Error(d1.error || "Ошибка скачивания файла");
+
+      // Шаг 2: парсим xlsx и нарезаем на чанки (~15-25 сек)
+      setUrlStatus({ type: "success", msg: "Шаг 2/3: обрабатываю файл…" });
+      const res2 = await fetch(FUNC_PARSE_YANDEX_CHUNKS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const d2 = await res2.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { ok?: boolean; total_rows?: number; total_chunks?: number; error?: string };
+      if (!res2.ok || d2.error) throw new Error(d2.error || "Ошибка обработки файла");
+
+      // Шаг 3: загружаем чанки в БД
+      let chunkIndex = 0;
+      let totalInserted = 0;
+      let totalSkipped = 0;
+      let totalChunks = d2.total_chunks ?? 1;
+
+      do {
+        setUrlStatus({ type: "success", msg: `Шаг 3/3: загружаю в базу… чанк ${chunkIndex + 1}/${totalChunks}` });
+        const res3 = await fetch(FUNC_PARSE_YANDEX_FILE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chunk: chunkIndex, mode: "replace" }),
+        });
+        const d3 = await res3.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { inserted?: number; skipped?: number; total_chunks?: number; done?: boolean; error?: string };
+        if (!res3.ok || d3.error) throw new Error(d3.error || "Ошибка загрузки в базу");
+        totalInserted += d3.inserted ?? 0;
+        totalSkipped += d3.skipped ?? 0;
+        totalChunks = d3.total_chunks ?? totalChunks;
+        if (d3.done) break;
+        chunkIndex++;
+      } while (chunkIndex < totalChunks);
+
       setCarsUrl(url);
-      setUrlStatus({ type: "success", msg: "База успешно обновлена с Яндекс.Диска" });
+      await reloadCarDb();
+      setUrlStatus({ type: "success", msg: `Готово! Загружено ${totalInserted.toLocaleString("ru-RU")} модификаций с Яндекс.Диска` });
+      setCarsStatus({ type: "success", msg: `Загружено ${totalInserted.toLocaleString("ru-RU")} модификаций. Пропущено: ${totalSkipped}.` });
     } catch (e) {
       setUrlStatus({ type: "error", msg: e instanceof Error ? e.message : "Неизвестная ошибка" });
     } finally {
