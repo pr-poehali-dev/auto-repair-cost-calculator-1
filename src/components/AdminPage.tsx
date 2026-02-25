@@ -287,11 +287,14 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
       const raw = await res.json();
       const data = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!res.ok || data.error) throw new Error(data.error || "Ошибка загрузки файла");
-      const bytes = Uint8Array.from(atob(data.data), c => c.charCodeAt(0));
-      const file = new File([bytes], "yandex-disk.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      // Скачиваем файл по presigned URL
+      const fileRes = await fetch(data.url);
+      if (!fileRes.ok) throw new Error("Не удалось скачать файл");
+      const blob = await fileRes.blob();
+      const file = new File([blob], "yandex-disk.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       setCarsUrl(url);
       handleCarsFile(file);
-      setUrlStatus({ type: "success", msg: "Файл успешно загружен с Яндекс.Диска" });
+      setUrlStatus({ type: "success", msg: `Файл успешно загружен с Яндекс.Диска (${(data.size / 1024 / 1024).toFixed(1)} МБ)` });
     } catch (e) {
       setUrlStatus({ type: "error", msg: e instanceof Error ? e.message : "Неизвестная ошибка" });
     } finally {
