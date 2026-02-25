@@ -64,7 +64,9 @@ def make_id(*parts):
 def g(row, i):
     v = row[i] if i < len(row) else None
     s = str(v).strip() if v is not None else ""
-    return None if s in ("None", "none", "") else s
+    if s in ("None", "none", ""):
+        return None
+    return s.replace(",", ".")
 
 def gc(row, col_idx, col_name, fallback_i):
     i = col_idx.get(col_name.lower())
