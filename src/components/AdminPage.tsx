@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { CarBrand, Work } from "@/data/carDatabase";
-import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplateHelper, FUNC_FETCH_YANDEX_FILE } from "@/components/admin/adminHelpers";
+import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplateHelper, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_FILE } from "@/components/admin/adminHelpers";
 import * as XLSX from "xlsx";
 import TabDashboard from "@/components/admin/TabDashboard";
 import TabBranches from "@/components/admin/TabBranches";
@@ -297,22 +297,30 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setUrlStatus(null);
     setCarsStatus(null);
     try {
-      const res = await fetch(FUNC_FETCH_YANDEX_FILE, {
+      // Шаг 1: скачиваем файл с Яндекс.Диска и сохраняем в S3 (~5 сек)
+      setUrlStatus({ type: "success", msg: "Шаг 1/2: скачиваю файл с Яндекс.Диска…" });
+      const res1 = await fetch(FUNC_FETCH_YANDEX_FILE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
-      const raw = await res.json();
-      const data = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (!res.ok || data.error) throw new Error(data.error || "Ошибка получения ссылки");
-      // Скачиваем с публичного CDN (нет CORS-ограничений)
-      const fileRes = await fetch(data.cdn_url + "?t=" + Date.now());
-      if (!fileRes.ok) throw new Error("Не удалось скачать файл с CDN");
-      const blob = await fileRes.blob();
-      const file = new File([blob], "yandex-disk.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const d1 = await res1.json().then(r => typeof r === "string" ? JSON.parse(r) : r);
+      if (!res1.ok || d1.error) throw new Error(d1.error || "Ошибка скачивания файла");
+
+      // Шаг 2: парсим xlsx и загружаем в БД (~30–60 сек для большого файла)
+      setUrlStatus({ type: "success", msg: `Шаг 2/2: загружаю в базу данных (${(d1.size / 1024 / 1024).toFixed(1)} МБ)…` });
+      const res2 = await fetch(FUNC_PARSE_YANDEX_FILE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "replace" }),
+      });
+      const d2 = await res2.json().then(r => typeof r === "string" ? JSON.parse(r) : r);
+      if (!res2.ok || d2.error) throw new Error(d2.error || "Ошибка загрузки в базу");
+
       setCarsUrl(url);
-      setUrlStatus({ type: "success", msg: "Файл получен, обрабатываю…" });
-      handleCarsFile(file);
+      await reloadCarDb();
+      setUrlStatus({ type: "success", msg: `Готово! Загружено ${d2.inserted?.toLocaleString("ru-RU")} модификаций с Яндекс.Диска` });
+      setCarsStatus({ type: "success", msg: `Загружено ${d2.inserted?.toLocaleString("ru-RU")} модификаций. Пропущено: ${d2.skipped ?? 0}.` });
     } catch (e) {
       setUrlStatus({ type: "error", msg: e instanceof Error ? e.message : "Неизвестная ошибка" });
     } finally {

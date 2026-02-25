@@ -5,6 +5,7 @@ import { WorkEntry } from "@/pages/Index";
 export const FUNC_UPLOAD_CARS = "https://functions.poehali.dev/0f36901b-d880-4d5e-aa33-e9e1b64c0586";
 export const FUNC_UPLOAD_CARS_CHUNK = "https://functions.poehali.dev/3d38a075-03d1-4f23-864a-7c175df1cf24";
 export const FUNC_FETCH_YANDEX_FILE = "https://functions.poehali.dev/768a84bf-ea8e-43a1-a6ae-9a830e80b9f3";
+export const FUNC_PARSE_YANDEX_FILE = "https://functions.poehali.dev/f802c916-bdfb-4ef7-a22c-a1237da0580d";
 
 export const CAR_COLUMNS = [
   "Марка", "Модель", "Поколение", "Год от (Поколение)", "Год до (Поколение)", "Серия", "Модификация",

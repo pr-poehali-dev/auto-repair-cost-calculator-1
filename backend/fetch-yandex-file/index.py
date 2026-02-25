@@ -60,13 +60,10 @@ def handler(event: dict, context) -> dict:
         Key=S3_KEY,
         Body=file_bytes,
         ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ACL="public-read",
     )
-
-    cdn_url = f"https://cdn.poehali.dev/projects/{aws_key}/files/{S3_KEY}"
 
     return {
         "statusCode": 200,
         "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-        "body": json.dumps({"cdn_url": cdn_url, "size": len(file_bytes)}),
+        "body": json.dumps({"ok": True, "size": len(file_bytes)}),
     }
