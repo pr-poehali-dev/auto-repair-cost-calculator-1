@@ -1,11 +1,14 @@
 """
-Читает один JSON-чанк из S3 (подготовленный fetch-yandex-file) и пишет в БД.
-POST { chunk: 0, mode: "replace"|"merge" } → { inserted, skipped, total_chunks, done }
+Читает xlsx из S3 (tmp/ydisk-raw.xlsx) по чанкам и пишет в БД.
+Шаг 0: сначала вызов с { "init": true } — считывает заголовок и кол-во строк, сохраняет мету.
+Шаг N: вызов с { "chunk": N, "mode": "replace"|"merge" } — парсит строки N*CHUNK_SIZE..(N+1)*CHUNK_SIZE и пишет в БД.
 """
 import json
 import os
+import io
 import re
 import boto3
+import openpyxl
 import psycopg2
 
 CORS_HEADERS = {
@@ -14,7 +17,9 @@ CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 }
 
+S3_RAW_KEY  = "tmp/ydisk-raw.xlsx"
 S3_META_KEY = "tmp/ydisk-meta.json"
+CHUNK_SIZE  = 500
 
 INSERT_MOD = """
     INSERT INTO car_modifications (
@@ -64,6 +69,86 @@ def g(row, i):
 def gc(row, col_idx, col_name, fallback_i):
     i = col_idx.get(col_name.lower())
     return g(row, i) if i is not None else g(row, fallback_i)
+
+
+def get_s3():
+    return boto3.client(
+        "s3",
+        endpoint_url="https://bucket.poehali.dev",
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
+
+
+def init_meta(s3) -> dict:
+    """Читает заголовок xlsx и считает строки, сохраняет мету в S3."""
+    obj = s3.get_object(Bucket="files", Key=S3_RAW_KEY)
+    file_bytes = obj["Body"].read()
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
+
+    header_row = None
+    header_excel_row = 1
+    total_data_rows = 0
+
+    for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        row_vals = [str(c) if c is not None else "" for c in row]
+        if header_row is None:
+            if str(row_vals[0]).strip().lower() in ("марка", "brand"):
+                header_row = row_vals
+                header_excel_row = i
+            elif i <= 5:
+                header_row = row_vals
+                header_excel_row = i
+        else:
+            if any(c for c in row_vals):
+                total_data_rows += 1
+
+    wb.close()
+
+    total_chunks = (total_data_rows + CHUNK_SIZE - 1) // CHUNK_SIZE
+
+    meta = {
+        "header": header_row,
+        "header_excel_row": header_excel_row,
+        "total_rows": total_data_rows,
+        "total_chunks": total_chunks,
+        "chunk_size": CHUNK_SIZE,
+    }
+    s3.put_object(
+        Bucket="files",
+        Key=S3_META_KEY,
+        Body=json.dumps(meta, ensure_ascii=False).encode("utf-8"),
+        ContentType="application/json",
+    )
+    return meta
+
+
+def read_chunk_rows(s3, meta: dict, chunk_index: int) -> list:
+    """Читает только нужный диапазон строк из xlsx через read_only openpyxl."""
+    obj = s3.get_object(Bucket="files", Key=S3_RAW_KEY)
+    file_bytes = obj["Body"].read()
+
+    header_excel_row = meta["header_excel_row"]
+    chunk_size = meta["chunk_size"]
+
+    # Excel row numbers (1-based): data starts at header_excel_row+1
+    data_start = header_excel_row + 1
+    row_from = data_start + chunk_index * chunk_size
+    row_to   = row_from + chunk_size - 1
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
+
+    rows = []
+    for i, row in enumerate(ws.iter_rows(min_row=row_from, max_row=row_to, values_only=True), start=row_from):
+        row_vals = [str(c) if c is not None else "" for c in row]
+        if any(c for c in row_vals):
+            rows.append(row_vals)
+
+    wb.close()
+    return rows
 
 
 def process_rows(cur, rows, col_idx):
@@ -164,33 +249,42 @@ def process_rows(cur, rows, col_idx):
 
 
 def handler(event: dict, context) -> dict:
-    """Читает один JSON-чанк из S3 и пишет в БД."""
+    """Парсит xlsx из S3 по чанкам и пишет в БД. init=true — инициализация меты, chunk=N — загрузка данных."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
 
     try:
-        body        = json.loads(event.get("body") or "{}")
-        chunk_index = int(body.get("chunk", 0))
-        mode        = body.get("mode", "replace")
+        body = json.loads(event.get("body") or "{}")
     except Exception:
         return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Неверные параметры"})}
 
-    s3 = boto3.client(
-        "s3",
-        endpoint_url="https://bucket.poehali.dev",
-        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-    )
+    s3 = get_s3()
 
-    meta_obj     = s3.get_object(Bucket="files", Key=S3_META_KEY)
-    meta         = json.loads(meta_obj["Body"].read().decode("utf-8"))
-    header_row   = meta["header"]
+    # Режим инициализации: считаем строки, сохраняем мету
+    if body.get("init"):
+        meta = init_meta(s3)
+        return {
+            "statusCode": 200,
+            "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
+            "body": json.dumps({
+                "ok": True,
+                "total_rows": meta["total_rows"],
+                "total_chunks": meta["total_chunks"],
+            }),
+        }
+
+    # Режим загрузки чанка
+    chunk_index = int(body.get("chunk", 0))
+    mode        = body.get("mode", "replace")
+
+    meta_obj   = s3.get_object(Bucket="files", Key=S3_META_KEY)
+    meta       = json.loads(meta_obj["Body"].read().decode("utf-8"))
+    header_row = meta["header"]
     total_chunks = meta["total_chunks"]
     total_rows   = meta["total_rows"]
     col_idx      = {str(h).strip().lower(): i for i, h in enumerate(header_row)}
 
-    chunk_obj  = s3.get_object(Bucket="files", Key=f"tmp/ydisk-chunk-{chunk_index}.json")
-    rows_chunk = json.loads(chunk_obj["Body"].read().decode("utf-8"))
+    rows_chunk = read_chunk_rows(s3, meta, chunk_index)
 
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur  = conn.cursor()

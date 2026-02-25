@@ -297,8 +297,8 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setUrlStatus(null);
     setCarsStatus(null);
     try {
-      // Шаг 1: скачиваем файл с Яндекс.Диска в S3 (~3-5 сек)
-      setUrlStatus({ type: "success", msg: "Шаг 1/3: скачиваю файл с Яндекс.Диска…" });
+      // Шаг 1: скачиваем файл с Яндекс.Диска в S3
+      setUrlStatus({ type: "success", msg: "Шаг 1/2: скачиваю файл с Яндекс.Диска…" });
       const res1 = await fetch(FUNC_FETCH_YANDEX_FILE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -307,24 +307,24 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
       const d1 = await res1.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r);
       if (!res1.ok || (d1 as { error?: string }).error) throw new Error((d1 as { error?: string }).error || "Ошибка скачивания файла");
 
-      // Шаг 2: парсим xlsx и нарезаем на чанки (~15-25 сек)
-      setUrlStatus({ type: "success", msg: "Шаг 2/3: обрабатываю файл…" });
-      const res2 = await fetch(FUNC_PARSE_YANDEX_CHUNKS, {
+      // Шаг 2: инициализируем мету (считаем строки) 
+      setUrlStatus({ type: "success", msg: "Шаг 2/2: считаю строки в файле…" });
+      const resInit = await fetch(FUNC_PARSE_YANDEX_FILE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ init: true }),
       });
-      const d2 = await res2.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { ok?: boolean; total_rows?: number; total_chunks?: number; error?: string };
-      if (!res2.ok || d2.error) throw new Error(d2.error || "Ошибка обработки файла");
+      const dInit = await resInit.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { ok?: boolean; total_rows?: number; total_chunks?: number; error?: string };
+      if (!resInit.ok || dInit.error) throw new Error(dInit.error || "Ошибка чтения файла");
 
-      // Шаг 3: загружаем чанки в БД
+      // Загружаем чанки в БД
       let chunkIndex = 0;
       let totalInserted = 0;
       let totalSkipped = 0;
-      let totalChunks = d2.total_chunks ?? 1;
+      let totalChunks = dInit.total_chunks ?? 1;
 
       do {
-        setUrlStatus({ type: "success", msg: `Шаг 3/3: загружаю в базу… чанк ${chunkIndex + 1}/${totalChunks}` });
+        setUrlStatus({ type: "success", msg: `Загружаю в базу… чанк ${chunkIndex + 1}/${totalChunks}` });
         const res3 = await fetch(FUNC_PARSE_YANDEX_FILE, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
