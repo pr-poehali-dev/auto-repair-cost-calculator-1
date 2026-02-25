@@ -212,7 +212,7 @@ const StepBadge = ({ n, active, done, label }: { n: number; active: boolean; don
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
-  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled } = useAppData();
+  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, reloadCarDb } = useAppData();
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
 
   // Rate
@@ -287,14 +287,10 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
       const raw = await res.json();
       const data = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!res.ok || data.error) throw new Error(data.error || "Ошибка загрузки файла");
-      // Скачиваем файл по presigned URL
-      const fileRes = await fetch(data.url);
-      if (!fileRes.ok) throw new Error("Не удалось скачать файл");
-      const blob = await fileRes.blob();
-      const file = new File([blob], "yandex-disk.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       setCarsUrl(url);
-      handleCarsFile(file);
-      setUrlStatus({ type: "success", msg: `Файл успешно загружен с Яндекс.Диска (${(data.size / 1024 / 1024).toFixed(1)} МБ)` });
+      await reloadCarDb();
+      setUrlStatus({ type: "success", msg: `Загружено ${data.inserted?.toLocaleString("ru-RU")} модификаций с Яндекс.Диска` });
+      setCarsStatus({ type: "success", msg: `Загружено ${data.inserted?.toLocaleString("ru-RU")} модификаций. Пропущено строк: ${data.skipped ?? 0}.` });
     } catch (e) {
       setUrlStatus({ type: "error", msg: e instanceof Error ? e.message : "Неизвестная ошибка" });
     } finally {
