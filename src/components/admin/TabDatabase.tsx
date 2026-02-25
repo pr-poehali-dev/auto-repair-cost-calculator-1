@@ -4,14 +4,45 @@ import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { UploadBlock, StepBadge } from "@/components/admin/AdminUploadBlocks";
 import {
-  FUNC_UPLOAD_CARS_CHUNK, CAR_COLUMNS,
+  FUNC_UPLOAD_CARS_CHUNK, FUNC_FETCH_YANDEX_FILE, CAR_COLUMNS,
   downloadCarsTemplate, downloadWorksTemplate,
   mergeWorks, parseWorksList, generateNormsTemplate, parseFilledTemplate,
   filterAndDownloadOldCars,
 } from "@/components/admin/adminHelpers";
 
 const TabDatabase = () => {
-  const { carDatabase, setCarDatabase, carDbLoading, carDbCount, reloadCarDb, worksDatabase, setWorksDatabase } = useAppData();
+  const { carDatabase, setCarDatabase, carDbLoading, carDbCount, reloadCarDb, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled } = useAppData();
+
+  const [urlInput, setUrlInput] = useState(carsUrl);
+  const [urlStatus, setUrlStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [urlLoading, setUrlLoading] = useState(false);
+
+  const handleFetchFromDisk = async (urlOverride?: string) => {
+    const url = (urlOverride ?? urlInput).trim();
+    if (!url) { setUrlStatus({ type: "error", msg: "Введите ссылку на файл Яндекс.Диска" }); return; }
+    setUrlLoading(true);
+    setUrlStatus(null);
+    try {
+      const res = await fetch(FUNC_FETCH_YANDEX_FILE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const raw = await res.json();
+      const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!res.ok || data.error) throw new Error(data.error || "Ошибка загрузки файла");
+      // Декодируем base64 и передаём как File
+      const bytes = Uint8Array.from(atob(data.data), c => c.charCodeAt(0));
+      const file = new File([bytes], "yandex-disk.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      await uploadCarsToBackend(file, "replace");
+      setCarsUrl(url);
+      setUrlStatus({ type: "success", msg: "База успешно обновлена с Яндекс.Диска" });
+    } catch (e) {
+      setUrlStatus({ type: "error", msg: e instanceof Error ? e.message : "Неизвестная ошибка" });
+    } finally {
+      setUrlLoading(false);
+    }
+  };
 
   const [filterStatus, setFilterStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [filterLoading, setFilterLoading] = useState(false);
@@ -177,6 +208,68 @@ const TabDatabase = () => {
         <StepBadge n={3} active={step2Done && !step3Done} done={step3Done} label="Нормативы" />
       </div>
 
+      {/* Блок Яндекс.Диска */}
+      <div className="border border-blue-200 rounded-lg p-5 bg-blue-50 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <Icon name="Link" size={20} className="text-blue-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm text-blue-900">Автообновление с Яндекс.Диска</p>
+              <p className="text-xs text-blue-700 mt-1">
+                Укажите постоянную публичную ссылку на xlsx-файл. Включите тогл — кнопка «Обновить» скачает файл напрямую с диска. При выключенном тогле — загрузка файлом как обычно.
+              </p>
+            </div>
+          </div>
+          {/* Тогл */}
+          <button
+            type="button"
+            onClick={() => setCarsUrlEnabled(!carsUrlEnabled)}
+            className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${carsUrlEnabled ? "bg-blue-600" : "bg-gray-300"}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${carsUrlEnabled ? "translate-x-5" : "translate-x-0"}`} />
+          </button>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={urlInput}
+            onChange={e => setUrlInput(e.target.value)}
+            placeholder="https://disk.yandex.ru/d/..."
+            className="flex-1 text-sm px-3 py-2 border border-blue-300 rounded-lg bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200"
+          />
+          <button
+            type="button"
+            onClick={() => { setCarsUrl(urlInput.trim()); setUrlStatus({ type: "success", msg: "Ссылка сохранена" }); }}
+            disabled={!urlInput.trim() || urlInput.trim() === carsUrl}
+            className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:pointer-events-none whitespace-nowrap"
+          >
+            Сохранить
+          </button>
+        </div>
+
+        {urlStatus && (
+          <div className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs ${urlStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+            <Icon name={urlStatus.type === "success" ? "CheckCircle" : "XCircle"} size={13} className="shrink-0" />
+            {urlStatus.msg}
+          </div>
+        )}
+
+        {carsUrlEnabled && carsUrl && (
+          <button
+            type="button"
+            onClick={() => handleFetchFromDisk(carsUrl)}
+            disabled={urlLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-all disabled:opacity-60 disabled:pointer-events-none"
+          >
+            {urlLoading
+              ? <><Icon name="Loader" size={14} className="animate-spin" />Загружаю с Яндекс.Диска…</>
+              : <><Icon name="RefreshCw" size={14} />Обновить базу с Яндекс.Диска</>
+            }
+          </button>
+        )}
+      </div>
+
       {/* Блок очистки базы */}
       <div className="border border-amber-200 rounded-lg p-5 bg-amber-50 space-y-3">
         <div className="flex items-start gap-3">
@@ -237,10 +330,11 @@ const TabDatabase = () => {
         {/* Step 1 */}
         <UploadBlock title="Шаг 1 — Загрузите базу автомобилей"
           description="Файлы до 200мб+. Каждая строка — одна модификация. Поддерживается 89 колонок: кузов, двигатель, трансмиссия, подвеска, электро-данные."
-          buttonLabel="Загрузить базу авто (.xlsx)"
+          buttonLabel={carsUrlEnabled && carsUrl ? "Обновить с Яндекс.Диска" : "Загрузить базу авто (.xlsx)"}
           accept=".xlsx,.xls"
           onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars || carDbCount > 0}
-          onDownloadTemplate={downloadCarsTemplate} status={carsStatus} uploading={uploadProgress !== null}>
+          onDownloadTemplate={downloadCarsTemplate} status={carsStatus} uploading={uploadProgress !== null || urlLoading}
+          onButtonClick={carsUrlEnabled && carsUrl ? () => handleFetchFromDisk(carsUrl) : undefined}>
           {uploadProgress !== null && (
             <div className="mb-4 space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="flex justify-between items-center">

@@ -1,12 +1,13 @@
 import { useRef } from "react";
 import Icon from "@/components/ui/icon";
 
-export const UploadBlock = ({ title, description, buttonLabel, accept, onFile, onUpdate, onDownloadTemplate, status, disabled, hasData, uploading, children }: {
+export const UploadBlock = ({ title, description, buttonLabel, accept, onFile, onUpdate, onDownloadTemplate, status, disabled, hasData, uploading, children, onButtonClick }: {
   title: string; description: string; buttonLabel: string; accept: string;
   onFile: (file: File) => void; onUpdate?: (file: File) => void;
   onDownloadTemplate: () => void;
   status: { type: "success" | "error"; msg: string } | null;
   disabled?: boolean; hasData?: boolean; uploading?: boolean; children?: React.ReactNode;
+  onButtonClick?: () => void;
 }) => {
   const refLoad = useRef<HTMLInputElement>(null);
   const refUpdate = useRef<HTMLInputElement>(null);
@@ -29,12 +30,12 @@ export const UploadBlock = ({ title, description, buttonLabel, accept, onFile, o
       )}
       <div className="flex flex-wrap gap-2">
         <input ref={refLoad} type="file" accept={accept} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }} />
-        <button type="button" onClick={() => refLoad.current?.click()} disabled={uploading}
+        <button type="button" onClick={onButtonClick ?? (() => refLoad.current?.click())} disabled={uploading}
           className="flex items-center gap-2 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm disabled:opacity-60 disabled:pointer-events-none">
-          {uploading ? <Icon name="Loader" size={14} className="animate-spin" /> : <Icon name="Upload" size={14} />}
+          {uploading ? <Icon name="Loader" size={14} className="animate-spin" /> : <Icon name={onButtonClick ? "RefreshCw" : "Upload"} size={14} />}
           {uploading ? "Загрузка…" : buttonLabel}
         </button>
-        {onUpdate && hasData && !uploading && (
+        {!onButtonClick && onUpdate && hasData && !uploading && (
           <>
             <input ref={refUpdate} type="file" accept={accept} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpdate(f); e.target.value = ""; }} />
             <button type="button" onClick={() => refUpdate.current?.click()}

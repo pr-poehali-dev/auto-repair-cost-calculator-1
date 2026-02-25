@@ -7,6 +7,8 @@ const LS_CARS = "remtech_cars_v1";
 const LS_WORKS = "remtech_works_v1";
 const LS_BRANCHES = "remtech_branches_v1";
 const LS_LINKS = "remtech_links_v1";
+const LS_CARS_URL = "remtech_cars_url_v1";
+const LS_CARS_URL_ENABLED = "remtech_cars_url_enabled_v1";
 
 function loadLS<T>(key: string, fallback: T): T {
   try {
@@ -99,6 +101,10 @@ interface AppDataContextType {
   carDbCount: number;
   carDbLoading: boolean;
   reloadCarDb: () => Promise<void>;
+  carsUrl: string;
+  setCarsUrl: (url: string) => void;
+  carsUrlEnabled: boolean;
+  setCarsUrlEnabled: (v: boolean) => void;
 }
 
 export const AppDataContext = createContext<AppDataContextType>({
@@ -114,6 +120,10 @@ export const AppDataContext = createContext<AppDataContextType>({
   carDbCount: 0,
   carDbLoading: false,
   reloadCarDb: async () => {},
+  carsUrl: "",
+  setCarsUrl: () => {},
+  carsUrlEnabled: false,
+  setCarsUrlEnabled: () => {},
 });
 
 export const useAppData = () => useContext(AppDataContext);
@@ -128,10 +138,14 @@ const Index = () => {
   const [workLinks, setWorkLinksRaw] = useState<WorkLinkGroup[]>(() => loadLS<WorkLinkGroup[]>(LS_LINKS, []));
   const [carDbCount, setCarDbCount] = useState<number>(0);
   const [carDbLoading, setCarDbLoading] = useState<boolean>(false);
+  const [carsUrl, setCarsUrlRaw] = useState<string>(() => loadLS<string>(LS_CARS_URL, ""));
+  const [carsUrlEnabled, setCarsUrlEnabledRaw] = useState<boolean>(() => loadLS<boolean>(LS_CARS_URL_ENABLED, false));
 
   const setCarDatabase = (data: CarBrand[]) => { setCarDatabaseRaw(data); saveLS(LS_CARS, data); };
   const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); };
   const setWorkLinks = (data: WorkLinkGroup[]) => { setWorkLinksRaw(data); saveLS(LS_LINKS, data); };
+  const setCarsUrl = (url: string) => { setCarsUrlRaw(url); saveLS(LS_CARS_URL, url); };
+  const setCarsUrlEnabled = (v: boolean) => { setCarsUrlEnabledRaw(v); saveLS(LS_CARS_URL_ENABLED, v); };
 
   const reloadCarDb = useCallback(async () => {
     setCarDbLoading(true);
@@ -166,7 +180,7 @@ const Index = () => {
   };
 
   return (
-    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, carDbCount, carDbLoading, reloadCarDb }}>
+    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         <div style={{ display: activeTab === "calculator" ? undefined : "none" }}>
           <CalculatorPage onAddToHistory={addToHistory} />

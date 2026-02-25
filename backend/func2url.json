@@ -1,4 +1,5 @@
 {
+  "fetch-yandex-file": "https://functions.poehali.dev/768a84bf-ea8e-43a1-a6ae-9a830e80b9f3",
   "upload-cars-chunk": "https://functions.poehali.dev/3d38a075-03d1-4f23-864a-7c175df1cf24",
   "upload-cars": "https://functions.poehali.dev/0f36901b-d880-4d5e-aa33-e9e1b64c0586",
   "get-cars": "https://functions.poehali.dev/135a6c4a-9149-40f9-a7a8-cf2ce637fdb2"
