@@ -305,8 +305,9 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
       const raw = await res.json();
       const data = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!res.ok || data.error) throw new Error(data.error || "Ошибка получения ссылки");
-      const fileRes = await fetch(data.download_url);
-      if (!fileRes.ok) throw new Error("Не удалось скачать файл с Яндекс.Диска");
+      // Скачиваем с публичного CDN (нет CORS-ограничений)
+      const fileRes = await fetch(data.cdn_url + "?t=" + Date.now());
+      if (!fileRes.ok) throw new Error("Не удалось скачать файл с CDN");
       const blob = await fileRes.blob();
       const file = new File([blob], "yandex-disk.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       setCarsUrl(url);

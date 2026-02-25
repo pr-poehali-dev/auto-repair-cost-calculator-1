@@ -1,1 +1,1 @@
-# no extra dependencies needed
+boto3
