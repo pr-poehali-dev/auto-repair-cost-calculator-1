@@ -1,15 +1,11 @@
 """
-Читает xlsx из S3 по одному чанку за вызов.
-POST { chunk: 0, chunk_size: 300, mode: "replace"|"merge" }
-→ { inserted, skipped, total_rows, total_chunks, done: bool }
-Фронт вызывает последовательно chunk=0,1,2,... пока done=true.
+Читает один JSON-чанк из S3 (подготовленный fetch-yandex-file) и пишет в БД.
+POST { chunk: 0, mode: "replace"|"merge" } → { inserted, skipped, total_chunks, done }
 """
 import json
 import os
-import io
 import re
 import boto3
-import openpyxl
 import psycopg2
 
 CORS_HEADERS = {
@@ -18,8 +14,7 @@ CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 }
 
-S3_KEY = "tmp/yandex-disk-cars.xlsx"
-S3_META_KEY = "tmp/yandex-disk-cars-meta.json"
+S3_META_KEY = "tmp/ydisk-meta.json"
 
 INSERT_MOD = """
     INSERT INTO car_modifications (
@@ -168,102 +163,52 @@ def process_rows(cur, rows, col_idx):
     return total, skipped
 
 
-def get_s3():
-    return boto3.client(
+def handler(event: dict, context) -> dict:
+    """Читает один JSON-чанк из S3 и пишет в БД."""
+    if event.get("httpMethod") == "OPTIONS":
+        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
+
+    try:
+        body        = json.loads(event.get("body") or "{}")
+        chunk_index = int(body.get("chunk", 0))
+        mode        = body.get("mode", "replace")
+    except Exception:
+        return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Неверные параметры"})}
+
+    s3 = boto3.client(
         "s3",
         endpoint_url="https://bucket.poehali.dev",
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
     )
 
+    meta_obj     = s3.get_object(Bucket="files", Key=S3_META_KEY)
+    meta         = json.loads(meta_obj["Body"].read().decode("utf-8"))
+    header_row   = meta["header"]
+    total_chunks = meta["total_chunks"]
+    total_rows   = meta["total_rows"]
+    col_idx      = {str(h).strip().lower(): i for i, h in enumerate(header_row)}
 
-def handler(event: dict, context) -> dict:
-    """Обрабатывает один чанк xlsx из S3 и пишет в БД. Фронт вызывает последовательно."""
-    if event.get("httpMethod") == "OPTIONS":
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
+    chunk_obj  = s3.get_object(Bucket="files", Key=f"tmp/ydisk-chunk-{chunk_index}.json")
+    rows_chunk = json.loads(chunk_obj["Body"].read().decode("utf-8"))
 
-    try:
-        body = json.loads(event.get("body") or "{}")
-        chunk_index = int(body.get("chunk", 0))
-        chunk_size  = int(body.get("chunk_size", 300))
-        mode        = body.get("mode", "replace")
-    except Exception:
-        return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Неверные параметры"})}
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur  = conn.cursor()
 
-    s3 = get_s3()
+    if chunk_index == 0 and mode == "replace":
+        cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
 
-    # На первом чанке — читаем и парсим весь файл, сохраняем строки в S3 как JSON
-    if chunk_index == 0:
-        obj = s3.get_object(Bucket="files", Key=S3_KEY)
-        file_bytes = obj["Body"].read()
+    ins, skp = process_rows(cur, rows_chunk, col_idx)
+    conn.commit()
+    cur.close()
+    conn.close()
 
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
-        ws = wb.active
-        all_rows = [[str(c) if c is not None else "" for c in row] for row in ws.iter_rows(values_only=True)]
-        wb.close()
-
-        if len(all_rows) < 2:
-            return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Файл пустой"})}
-
-        header_idx = 0
-        for i in range(min(5, len(all_rows))):
-            if str(all_rows[i][0]).strip().lower() in ("марка", "brand"):
-                header_idx = i; break
-
-        header_row = all_rows[header_idx]
-        data_rows  = [r for r in all_rows[header_idx + 1:] if any(c for c in r)]
-
-        meta = {"header": header_row, "total_rows": len(data_rows), "chunk_size": chunk_size}
-        s3.put_object(Bucket="files", Key=S3_META_KEY, Body=json.dumps(meta, ensure_ascii=False).encode("utf-8"), ContentType="application/json")
-        # Сохраняем строки порциями
-        for ci in range(0, len(data_rows), chunk_size):
-            s3.put_object(
-                Bucket="files",
-                Key=f"tmp/yandex-disk-rows-{ci // chunk_size}.json",
-                Body=json.dumps(data_rows[ci:ci + chunk_size], ensure_ascii=False).encode("utf-8"),
-                ContentType="application/json",
-            )
-
-        total_chunks = (len(data_rows) + chunk_size - 1) // chunk_size
-
-        # Очищаем БД если replace
-        if mode == "replace":
-            conn = psycopg2.connect(os.environ["DATABASE_URL"])
-            cur = conn.cursor()
-            cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
-            conn.commit(); cur.close(); conn.close()
-
-        # Обрабатываем первый чанк сразу
-        col_idx = {str(h).strip().lower(): i for i, h in enumerate(header_row)}
-        rows_chunk = data_rows[:chunk_size]
-        conn = psycopg2.connect(os.environ["DATABASE_URL"])
-        cur = conn.cursor()
-        ins, skp = process_rows(cur, rows_chunk, col_idx)
-        conn.commit(); cur.close(); conn.close()
-
-        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({
-            "inserted": ins, "skipped": skp, "total_rows": len(data_rows),
-            "total_chunks": total_chunks, "chunk": 0, "done": total_chunks <= 1,
-        })}
-
-    else:
-        # Последующие чанки — читаем из S3
-        meta_obj = s3.get_object(Bucket="files", Key=S3_META_KEY)
-        meta = json.loads(meta_obj["Body"].read().decode("utf-8"))
-        header_row   = meta["header"]
-        total_rows   = meta["total_rows"]
-        col_idx      = {str(h).strip().lower(): i for i, h in enumerate(header_row)}
-        total_chunks = (total_rows + chunk_size - 1) // chunk_size
-
-        rows_obj = s3.get_object(Bucket="files", Key=f"tmp/yandex-disk-rows-{chunk_index}.json")
-        rows_chunk = json.loads(rows_obj["Body"].read().decode("utf-8"))
-
-        conn = psycopg2.connect(os.environ["DATABASE_URL"])
-        cur = conn.cursor()
-        ins, skp = process_rows(cur, rows_chunk, col_idx)
-        conn.commit(); cur.close(); conn.close()
-
-        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({
-            "inserted": ins, "skipped": skp, "total_rows": total_rows,
-            "total_chunks": total_chunks, "chunk": chunk_index, "done": chunk_index >= total_chunks - 1,
-        })}
+    return {
+        "statusCode": 200,
+        "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
+        "body": json.dumps({
+            "inserted": ins, "skipped": skp,
+            "total_rows": total_rows, "total_chunks": total_chunks,
+            "chunk": chunk_index, "done": chunk_index >= total_chunks - 1,
+        }),
+    }

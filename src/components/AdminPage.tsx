@@ -319,7 +319,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         const res2 = await fetch(FUNC_PARSE_YANDEX_FILE, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chunk: chunkIndex, chunk_size: CHUNK_SIZE, mode: "replace" }),
+          body: JSON.stringify({ chunk: chunkIndex, mode: "replace" }),
         });
         const d2 = await res2.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { inserted?: number; skipped?: number; total_chunks?: number; done?: boolean; error?: string };
         if (!res2.ok || d2.error) throw new Error(d2.error || "Ошибка загрузки в базу");
