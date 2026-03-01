@@ -19,7 +19,7 @@ CORS_HEADERS = {
 
 S3_RAW_KEY  = "tmp/ydisk-raw.xlsx"
 S3_META_KEY = "tmp/ydisk-meta.json"
-CHUNK_SIZE  = 500
+CHUNK_SIZE  = 5000
 
 INSERT_MOD = """
     INSERT INTO car_modifications (
