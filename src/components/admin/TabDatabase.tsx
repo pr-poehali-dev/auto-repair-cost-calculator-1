@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { UploadBlock, StepBadge } from "@/components/admin/AdminUploadBlocks";
+import type { AutoSyncStatus } from "@/pages/Index";
 import {
   FUNC_UPLOAD_CARS_CHUNK, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_FILE, CAR_COLUMNS,
   downloadCarsTemplate, downloadWorksTemplate,
@@ -10,8 +11,21 @@ import {
   filterAndDownloadOldCars,
 } from "@/components/admin/adminHelpers";
 
+const autoSyncColors: Record<AutoSyncStatus, string> = {
+  idle: "",
+  syncing: "bg-blue-50 border-blue-200 text-blue-700",
+  done: "bg-green-50 border-green-200 text-green-700",
+  error: "bg-red-50 border-red-200 text-red-700",
+};
+const autoSyncIcon: Record<AutoSyncStatus, string> = {
+  idle: "",
+  syncing: "Loader",
+  done: "CheckCircle",
+  error: "XCircle",
+};
+
 const TabDatabase = () => {
-  const { carDatabase, setCarDatabase, carDbLoading, carDbCount, reloadCarDb, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled } = useAppData();
+  const { carDatabase, setCarDatabase, carDbLoading, carDbCount, reloadCarDb, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync } = useAppData();
 
   const [urlInput, setUrlInput] = useState(carsUrl);
   const [urlStatus, setUrlStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -233,6 +247,16 @@ const TabDatabase = () => {
 
   return (
     <div className="space-y-6">
+      {autoSyncStatus !== "idle" && (
+        <div className={`flex items-center gap-2.5 px-4 py-3 rounded-lg border text-sm font-medium ${autoSyncColors[autoSyncStatus]}`}>
+          <Icon name={autoSyncIcon[autoSyncStatus]} size={16} className={`shrink-0 ${autoSyncStatus === "syncing" ? "animate-spin" : ""}`} />
+          <span className="flex-1">{autoSyncMsg}</span>
+          {autoSyncStatus === "error" && (
+            <button onClick={triggerAutoSync} className="text-xs underline opacity-70 hover:opacity-100">Повторить</button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-4 items-center">
         <StepBadge n={1} active={!step1Done} done={step1Done} label="База автомобилей" />
         <Icon name="ChevronRight" size={16} className="text-muted-foreground hidden sm:block" />

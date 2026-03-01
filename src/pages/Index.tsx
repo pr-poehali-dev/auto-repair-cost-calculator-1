@@ -1,4 +1,5 @@
-import { useState, createContext, useContext, useEffect, useCallback } from "react";
+import { useState, createContext, useContext, useEffect, useCallback, useRef } from "react";
+import { FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_FILE } from "@/components/admin/adminHelpers";
 import { Branch } from "@/components/admin/TabBranches";
 
 const FUNC_GET_CARS = "https://functions.poehali.dev/135a6c4a-9149-40f9-a7a8-cf2ce637fdb2";
@@ -88,6 +89,8 @@ export const LINK_COLORS = [
   "#dc2626", "#9333ea", "#0d9488", "#db2777",
 ];
 
+export type AutoSyncStatus = "idle" | "syncing" | "done" | "error";
+
 interface AppDataContextType {
   carDatabase: CarBrand[];
   setCarDatabase: (data: CarBrand[]) => void;
@@ -105,6 +108,9 @@ interface AppDataContextType {
   setCarsUrl: (url: string) => void;
   carsUrlEnabled: boolean;
   setCarsUrlEnabled: (v: boolean) => void;
+  autoSyncStatus: AutoSyncStatus;
+  autoSyncMsg: string;
+  triggerAutoSync: () => void;
 }
 
 export const AppDataContext = createContext<AppDataContextType>({
@@ -124,6 +130,9 @@ export const AppDataContext = createContext<AppDataContextType>({
   setCarsUrl: () => {},
   carsUrlEnabled: false,
   setCarsUrlEnabled: () => {},
+  autoSyncStatus: "idle",
+  autoSyncMsg: "",
+  triggerAutoSync: () => {},
 });
 
 export const useAppData = () => useContext(AppDataContext);
@@ -140,6 +149,9 @@ const Index = () => {
   const [carDbLoading, setCarDbLoading] = useState<boolean>(false);
   const [carsUrl, setCarsUrlRaw] = useState<string>(() => loadLS<string>(LS_CARS_URL, ""));
   const [carsUrlEnabled, setCarsUrlEnabledRaw] = useState<boolean>(() => loadLS<boolean>(LS_CARS_URL_ENABLED, false));
+  const [autoSyncStatus, setAutoSyncStatus] = useState<AutoSyncStatus>("idle");
+  const [autoSyncMsg, setAutoSyncMsg] = useState<string>("");
+  const autoSyncRanRef = useRef(false);
 
   const setCarDatabase = (data: CarBrand[]) => { setCarDatabaseRaw(data); saveLS(LS_CARS, data); };
   const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); };
@@ -161,7 +173,67 @@ const Index = () => {
     }
   }, []);
 
-  useEffect(() => { reloadCarDb(); }, [reloadCarDb]);
+  const runAutoSync = useCallback(async (url: string) => {
+    setAutoSyncStatus("syncing");
+    setAutoSyncMsg("Обновляю базу авто с Яндекс.Диска…");
+    try {
+      const res1 = await fetch(FUNC_FETCH_YANDEX_FILE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const d1 = await res1.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { ok?: boolean; error?: string };
+      if (!res1.ok || d1.error) throw new Error(d1.error || "Ошибка скачивания файла");
+
+      const resInit = await fetch(FUNC_PARSE_YANDEX_FILE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ init: true }),
+      });
+      const dInit = await resInit.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { ok?: boolean; total_chunks?: number; error?: string };
+      if (!resInit.ok || dInit.error) throw new Error(dInit.error || "Ошибка чтения файла");
+
+      let chunkIndex = 0;
+      let totalInserted = 0;
+      let totalChunks = dInit.total_chunks ?? 1;
+
+      do {
+        setAutoSyncMsg(`Обновляю базу авто… чанк ${chunkIndex + 1}/${totalChunks}`);
+        const res3 = await fetch(FUNC_PARSE_YANDEX_FILE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chunk: chunkIndex, mode: "replace" }),
+        });
+        const d3 = await res3.json().then((r: unknown) => typeof r === "string" ? JSON.parse(r) : r) as { inserted?: number; total_chunks?: number; done?: boolean; error?: string };
+        if (!res3.ok || d3.error) throw new Error(d3.error || `Ошибка на чанке ${chunkIndex + 1}`);
+        totalInserted += d3.inserted ?? 0;
+        totalChunks = d3.total_chunks ?? totalChunks;
+        if (d3.done) break;
+        chunkIndex++;
+      } while (chunkIndex < totalChunks);
+
+      await reloadCarDb();
+      setAutoSyncStatus("done");
+      setAutoSyncMsg(`База авто обновлена: ${totalInserted.toLocaleString("ru-RU")} модификаций`);
+    } catch (e) {
+      setAutoSyncStatus("error");
+      setAutoSyncMsg(e instanceof Error ? e.message : "Ошибка автообновления");
+    }
+  }, [reloadCarDb]);
+
+  const triggerAutoSync = useCallback(() => {
+    const url = loadLS<string>(LS_CARS_URL, "");
+    if (url) runAutoSync(url);
+  }, [runAutoSync]);
+
+  useEffect(() => {
+    reloadCarDb();
+    if (!autoSyncRanRef.current) {
+      autoSyncRanRef.current = true;
+      const url = loadLS<string>(LS_CARS_URL, "");
+      if (url) runAutoSync(url);
+    }
+  }, [reloadCarDb, runAutoSync]);
   const setBranches = (fn: (prev: Branch[]) => Branch[]) => {
     setBranchesRaw((prev) => {
       const next = fn(prev);
@@ -180,7 +252,7 @@ const Index = () => {
   };
 
   return (
-    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled }}>
+    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         <div style={{ display: activeTab === "calculator" ? undefined : "none" }}>
           <CalculatorPage onAddToHistory={addToHistory} />
