@@ -9,8 +9,9 @@ import TabBranches from "@/components/admin/TabBranches";
 import TabUsers from "@/components/admin/TabUsers";
 import TabEditor from "@/components/admin/TabEditor";
 import TabLinks from "@/components/admin/TabLinks";
+import TabWorkFilters from "@/components/admin/TabWorkFilters";
 
-type AdminTab = "dashboard" | "branches" | "users" | "editor" | "links" | "database";
+type AdminTab = "dashboard" | "branches" | "users" | "editor" | "links" | "workfilters" | "database";
 
 const ADMIN_TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: "dashboard", label: "Главная", icon: "LayoutDashboard" },
@@ -18,6 +19,7 @@ const ADMIN_TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: "users", label: "Пользователи", icon: "Users" },
   { id: "editor", label: "Консоль редактирования", icon: "TerminalSquare" },
   { id: "links", label: "Связи работ", icon: "Link" },
+  { id: "workfilters", label: "Доступность работ", icon: "Filter" },
   { id: "database", label: "Базы данных", icon: "Database" },
 ];
 
@@ -436,6 +438,9 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
 
           {/* ── Связи работ ── */}
           {activeTab === "links" && <TabLinks />}
+
+          {/* ── Доступность работ ── */}
+          {activeTab === "workfilters" && <TabWorkFilters />}
 
           {/* ── Базы данных ── */}
           {activeTab === "database" && (

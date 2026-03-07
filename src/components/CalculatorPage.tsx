@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useAppData } from "@/pages/Index";
+import { useAppData, WorkFilterParam } from "@/pages/Index";
 import Icon from "@/components/ui/icon";
 import { HistoryItem } from "@/pages/Index";
 
@@ -194,7 +194,7 @@ function recalcCart(rawCart: CartItem[], workLinks: ReturnType<typeof useAppData
 }
 
 const CalculatorPage = ({ onAddToHistory }: Props) => {
-  const { carDatabase, branches, defaultRate, workLinks } = useAppData();
+  const { carDatabase, branches, defaultRate, workLinks, workFilters } = useAppData();
 
   const [branchId, setBranchId] = useState(() => {
     const active = branches.filter((b) => b.active);
@@ -267,6 +267,24 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
 
   const modification = useMemo(() => filteredMods.find((m) => m.id === modificationId), [filteredMods, modificationId]);
   const works = useMemo(() => modification?.works ?? [], [modification]);
+
+  // Набор заблокированных работ для данной модификации
+  const blockedWorkNames = useMemo(() => {
+    if (!modification || workFilters.length === 0) return new Set<string>();
+    const blocked = new Set<string>();
+    workFilters.forEach((wf) => {
+      const activeRules = wf.rules.filter((r) => r.allowedValues.length > 0);
+      if (activeRules.length === 0) return; // нет ограничений
+      // Работа заблокирована если хотя бы одно правило не выполняется
+      const isBlocked = activeRules.some((r) => {
+        const modVal = String((modification as Record<string, unknown>)[r.param as WorkFilterParam] ?? "").trim();
+        if (!modVal || modVal === "—") return false; // нет данных — не блокируем
+        return !r.allowedValues.includes(modVal);
+      });
+      if (isBlocked) blocked.add(wf.workName);
+    });
+    return blocked;
+  }, [modification, workFilters]);
 
   // Только применимые к текущему авто связи
   const applicableLinks = useMemo(
@@ -463,13 +481,27 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
               )}
             </div>
             {modification && (
-              <div className="mx-5 mb-5 p-3 bg-blue-50 border border-blue-100 rounded-md flex flex-wrap gap-5 text-xs animate-fade-in">
-                <span><span className="text-muted-foreground">Двигатель: </span><strong>{modification.engine}</strong></span>
-                {modification.engineCode && <span><span className="text-muted-foreground">Код: </span><strong>{modification.engineCode}</strong></span>}
-                <span><span className="text-muted-foreground">КПП: </span><strong>{modification.transmission}</strong></span>
-                {modification.driveType && <span><span className="text-muted-foreground">Привод: </span><strong>{modification.driveType}</strong></span>}
-                <span><span className="text-muted-foreground">Мощность: </span><strong>{modification.power}</strong></span>
-                <span><span className="text-muted-foreground">Работ в базе: </span><strong>{works.length}</strong></span>
+              <div className="mx-5 mb-5 space-y-2 animate-fade-in">
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded-md flex flex-wrap gap-5 text-xs">
+                  <span><span className="text-muted-foreground">Двигатель: </span><strong>{modification.engine}</strong></span>
+                  {modification.engineCode && <span><span className="text-muted-foreground">Код: </span><strong>{modification.engineCode}</strong></span>}
+                  <span><span className="text-muted-foreground">КПП: </span><strong>{modification.transmission}</strong></span>
+                  {modification.driveType && <span><span className="text-muted-foreground">Привод: </span><strong>{modification.driveType}</strong></span>}
+                  {(modification as Record<string, unknown>).turboType && <span><span className="text-muted-foreground">Наддув: </span><strong>{String((modification as Record<string, unknown>).turboType)}</strong></span>}
+                  {(modification as Record<string, unknown>).frontBrakes && <span><span className="text-muted-foreground">Тормоза пер.: </span><strong>{String((modification as Record<string, unknown>).frontBrakes)}</strong></span>}
+                  {(modification as Record<string, unknown>).rearBrakes && <span><span className="text-muted-foreground">Тормоза зад.: </span><strong>{String((modification as Record<string, unknown>).rearBrakes)}</strong></span>}
+                  <span><span className="text-muted-foreground">Мощность: </span><strong>{modification.power}</strong></span>
+                  <span><span className="text-muted-foreground">Работ в базе: </span><strong>{works.length}</strong></span>
+                  {blockedWorkNames.size > 0 && <span className="text-amber-600"><span className="text-muted-foreground">Скрыто по параметрам: </span><strong>{blockedWorkNames.size}</strong></span>}
+                </div>
+                {blockedWorkNames.size > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-700">
+                    <Icon name="FilterX" size={13} className="shrink-0" />
+                    <span>
+                      Для этого авто скрыто <strong>{blockedWorkNames.size}</strong> {blockedWorkNames.size === 1 ? "работа" : blockedWorkNames.size < 5 ? "работы" : "работ"} — они не подходят по параметрам (тормоза, наддув и др.)
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -505,6 +537,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                         options={works
                           .filter((w) => {
                             if (rawCart.some((c) => c.workId === w.id)) return false;
+                            if (blockedWorkNames.has(w.name)) return false;
                             // Скрываем работу если она — сопутствующая к уже добавленной главной
                             const isLinkedToExistingMain = applicableLinks.some(
                               (g) => g.linkedWorkNames.includes(w.name) &&

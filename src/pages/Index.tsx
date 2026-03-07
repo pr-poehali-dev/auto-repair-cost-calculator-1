@@ -10,6 +10,7 @@ const LS_BRANCHES = "remtech_branches_v1";
 const LS_LINKS = "remtech_links_v1";
 const LS_CARS_URL = "remtech_cars_url_v1";
 const LS_CARS_URL_ENABLED = "remtech_cars_url_enabled_v1";
+const LS_WORK_FILTERS = "remtech_work_filters_v1";
 
 function loadLS<T>(key: string, fallback: T): T {
   try {
@@ -49,6 +50,55 @@ export interface HistoryItem {
 export interface WorkEntry {
   id: string;
   name: string;
+}
+
+/**
+ * Параметры автомобиля, по которым можно фильтровать доступность работ.
+ * Поля соответствуют полям Modification из базы авто.
+ */
+export type WorkFilterParam =
+  | "engineType"      // Тип двигателя: "Бензин", "Дизель", "Гибрид"
+  | "transmission"    // Тип КПП: "Автомат", "Механика", "Вариатор", "Робот"
+  | "frontBrakes"     // Передние тормоза
+  | "rearBrakes"      // Задние тормоза
+  | "driveType"       // Привод: "Передний", "Задний", "Полный"
+  | "frontSuspension" // Подвеска передняя
+  | "rearSuspension"  // Подвеска задняя
+  | "turboType";      // Тип наддува: "Атмосферный", "Турбокомпрессор"
+
+export const WORK_FILTER_PARAM_LABELS: Record<WorkFilterParam, string> = {
+  engineType: "Тип двигателя",
+  transmission: "Тип КПП",
+  frontBrakes: "Передние тормоза",
+  rearBrakes: "Задние тормоза",
+  driveType: "Привод",
+  frontSuspension: "Подвеска передняя",
+  rearSuspension: "Подвеска задняя",
+  turboType: "Тип наддува",
+};
+
+export const WORK_FILTER_PARAMS: WorkFilterParam[] = [
+  "engineType", "transmission", "frontBrakes", "rearBrakes",
+  "driveType", "frontSuspension", "rearSuspension", "turboType",
+];
+
+/**
+ * Одно правило: работа workName доступна ТОЛЬКО если значение поля param
+ * входит в список allowedValues. Если allowedValues пусто — правило не ограничивает.
+ */
+export interface WorkFilterRule {
+  param: WorkFilterParam;
+  allowedValues: string[]; // пустой = нет ограничений по этому параметру
+}
+
+/**
+ * Набор правил для одной работы (все правила применяются через AND).
+ * Если у работы нет записи в workFilters — она доступна всегда.
+ */
+export interface WorkFilter {
+  id: string;
+  workName: string;
+  rules: WorkFilterRule[];
 }
 
 /**
@@ -101,6 +151,8 @@ interface AppDataContextType {
   defaultRate: number;
   workLinks: WorkLinkGroup[];
   setWorkLinks: (data: WorkLinkGroup[]) => void;
+  workFilters: WorkFilter[];
+  setWorkFilters: (data: WorkFilter[]) => void;
   carDbCount: number;
   carDbLoading: boolean;
   reloadCarDb: () => Promise<void>;
@@ -123,6 +175,8 @@ export const AppDataContext = createContext<AppDataContextType>({
   defaultRate: 2500,
   workLinks: [],
   setWorkLinks: () => {},
+  workFilters: [],
+  setWorkFilters: () => {},
   carDbCount: 0,
   carDbLoading: false,
   reloadCarDb: async () => {},
@@ -145,6 +199,7 @@ const Index = () => {
   const [worksDatabase, setWorksDatabaseRaw] = useState<WorkEntry[]>(() => loadLS<WorkEntry[]>(LS_WORKS, []));
   const [branches, setBranchesRaw] = useState<Branch[]>(() => loadLS<Branch[]>(LS_BRANCHES, DEFAULT_BRANCHES));
   const [workLinks, setWorkLinksRaw] = useState<WorkLinkGroup[]>(() => loadLS<WorkLinkGroup[]>(LS_LINKS, []));
+  const [workFilters, setWorkFiltersRaw] = useState<WorkFilter[]>(() => loadLS<WorkFilter[]>(LS_WORK_FILTERS, []));
   const [carDbCount, setCarDbCount] = useState<number>(0);
   const [carDbLoading, setCarDbLoading] = useState<boolean>(false);
   const [carsUrl, setCarsUrlRaw] = useState<string>(() => loadLS<string>(LS_CARS_URL, ""));
@@ -156,6 +211,7 @@ const Index = () => {
   const setCarDatabase = (data: CarBrand[]) => { setCarDatabaseRaw(data); saveLS(LS_CARS, data); };
   const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); };
   const setWorkLinks = (data: WorkLinkGroup[]) => { setWorkLinksRaw(data); saveLS(LS_LINKS, data); };
+  const setWorkFilters = (data: WorkFilter[]) => { setWorkFiltersRaw(data); saveLS(LS_WORK_FILTERS, data); };
   const setCarsUrl = (url: string) => { setCarsUrlRaw(url); saveLS(LS_CARS_URL, url); };
   const setCarsUrlEnabled = (v: boolean) => { setCarsUrlEnabledRaw(v); saveLS(LS_CARS_URL_ENABLED, v); };
 
@@ -252,7 +308,7 @@ const Index = () => {
   };
 
   return (
-    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync }}>
+    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, workFilters, setWorkFilters, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         <div style={{ display: activeTab === "calculator" ? undefined : "none" }}>
           <CalculatorPage onAddToHistory={addToHistory} />
