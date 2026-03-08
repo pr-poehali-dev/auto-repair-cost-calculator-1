@@ -163,18 +163,13 @@ const TabDatabase = () => {
         return ws;
       };
 
-      const estimateXlsxSize = (rows: Record<string, unknown>[]) => {
-        if (rows.length === 0) return 1000;
-        const sampleSize = Math.min(100, rows.length);
-        const sample = rows.slice(0, sampleSize);
-        let totalChars = 0;
-        for (const row of sample) {
-          for (const v of Object.values(row)) {
-            totalChars += v == null ? 0 : String(v).length;
-          }
-        }
-        const avgRowBytes = (totalChars / sampleSize) * 1.3 + 50;
-        return Math.round(avgRowBytes * rows.length + 5000);
+      const estimateXlsxBytesPerRow = (name: string, rows: Record<string, unknown>[]) => {
+        if (rows.length === 0) return 0;
+        const sampleCount = Math.min(200, rows.length);
+        const sampleWb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(sampleWb, makeSheet(name, rows.slice(0, sampleCount)), name);
+        const sampleBuf = XLSX.write(sampleWb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+        return sampleBuf.byteLength / sampleCount;
       };
 
       const saveFile = (wb: XLSX.WorkBook, idx: number) => {
@@ -183,44 +178,39 @@ const TabDatabase = () => {
       };
 
       let fileIndex = 1;
-      const smallTables: [string, Record<string, unknown>[]][] = [];
-      const bigTables: [string, Record<string, unknown>[]][] = [];
 
       for (const [name, rows] of Object.entries(allData)) {
-        const est = estimateXlsxSize(rows);
-        if (est > MAX_FILE_BYTES * 0.8) {
-          bigTables.push([name, rows]);
-        } else {
-          smallTables.push([name, rows]);
-        }
-      }
-
-      if (smallTables.length > 0) {
-        const wb = XLSX.utils.book_new();
-        for (const [name, rows] of smallTables) {
+        if (rows.length === 0) {
+          const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, makeSheet(name, rows), name);
-        }
-        setExportStatus({ type: "success", msg: `Сохраняю файл ${fileIndex}…` });
-        saveFile(wb, fileIndex);
-        fileIndex++;
-      }
-
-      for (const [name, rows] of bigTables) {
-        if (rows.length === 0) continue;
-        const estTotal = estimateXlsxSize(rows);
-        const partsCount = Math.ceil(estTotal / (MAX_FILE_BYTES * 0.85));
-        const rowsPerFile = Math.max(100, Math.ceil(rows.length / partsCount));
-
-        for (let i = 0; i < rows.length; i += rowsPerFile) {
-          const chunk = rows.slice(i, i + rowsPerFile);
-          const partWb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(partWb, makeSheet(name, chunk), name);
-          const from = i + 1;
-          const to = Math.min(i + rowsPerFile, rows.length);
-          setExportStatus({ type: "success", msg: `Сохраняю файл ${fileIndex} (${name}: строки ${from}–${to} из ${rows.length})…` });
-          saveFile(partWb, fileIndex);
+          saveFile(wb, fileIndex);
           fileIndex++;
-          await new Promise(r => setTimeout(r, 300));
+          continue;
+        }
+
+        setExportStatus({ type: "success", msg: `Оцениваю размер ${name}…` });
+        const bytesPerRow = estimateXlsxBytesPerRow(name, rows);
+        const estimatedTotal = bytesPerRow * rows.length;
+
+        if (estimatedTotal <= MAX_FILE_BYTES) {
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, makeSheet(name, rows), name);
+          setExportStatus({ type: "success", msg: `Сохраняю ${name}…` });
+          saveFile(wb, fileIndex);
+          fileIndex++;
+        } else {
+          const rowsPerFile = Math.max(50, Math.floor(MAX_FILE_BYTES / bytesPerRow));
+          for (let i = 0; i < rows.length; i += rowsPerFile) {
+            const chunk = rows.slice(i, i + rowsPerFile);
+            const partWb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(partWb, makeSheet(name, chunk), name);
+            const from = i + 1;
+            const to = Math.min(i + rowsPerFile, rows.length);
+            setExportStatus({ type: "success", msg: `Сохраняю файл ${fileIndex} (${name}: строки ${from}–${to} из ${rows.length})…` });
+            saveFile(partWb, fileIndex);
+            fileIndex++;
+            await new Promise(r => setTimeout(r, 500));
+          }
         }
       }
 
