@@ -380,8 +380,13 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         }
       }
       const saveCsv = (name: string, headers: string[], rows: string[][]) => {
-        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-        const csv = XLSX.utils.sheet_to_csv(ws);
+        const esc = (v: string) => {
+          if (v.includes(";") || v.includes('"') || v.includes("\n")) return '"' + v.replace(/"/g, '""') + '"';
+          return v;
+        };
+        const lines = [headers.map(esc).join(";")];
+        for (const row of rows) lines.push(row.map(esc).join(";"));
+        const csv = lines.join("\n");
         const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
