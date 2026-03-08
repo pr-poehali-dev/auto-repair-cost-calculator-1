@@ -399,6 +399,26 @@ const TabDatabase = () => {
         </button>
       </div>
 
+      {/* Кнопка обновления базы — всегда видна */}
+      <div className="p-4 border-2 border-dashed border-blue-400 rounded-lg bg-blue-50">
+        <p className="text-xs text-blue-700 mb-2">После загрузки Excel-файла нажмите, чтобы обновить все справочники:</p>
+        <button
+          type="button"
+          onClick={handleReloadDb}
+          disabled={reloadLoading || (!hasCars && carsStatus?.type !== "success")}
+          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Icon name={reloadLoading ? "Loader" : "RefreshCw"} size={14} className={reloadLoading ? "animate-spin" : ""} />
+          {reloadLoading ? "Обновляю базу…" : "Обновить загруженную базу данных"}
+        </button>
+        {reloadStatus && (
+          <div className={`mt-2 flex items-center gap-2 p-2.5 rounded border text-xs ${reloadStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+            <Icon name={reloadStatus.type === "success" ? "CheckCircle" : "XCircle"} size={13} className="shrink-0" />
+            {reloadStatus.msg}
+          </div>
+        )}
+      </div>
+
       <div className="border-t border-border pt-5 space-y-4">
         {/* Step 1 */}
         <UploadBlock title="Шаг 1 — Загрузите базу автомобилей"
@@ -439,24 +459,6 @@ const TabDatabase = () => {
           {carDbCount > 0 && uploadProgress === null && (
             <div className="mb-3 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
               <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
-            </div>
-          )}
-          <div className="mb-3 p-3 border border-dashed border-blue-300 rounded-lg bg-blue-50">
-            <p className="text-xs text-blue-700 mb-2">После загрузки Excel нажмите, чтобы обновить все справочники:</p>
-            <button
-              type="button"
-              onClick={handleReloadDb}
-              disabled={reloadLoading || (!hasCars && carsStatus?.type !== "success")}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Icon name={reloadLoading ? "Loader" : "RefreshCw"} size={14} className={reloadLoading ? "animate-spin" : ""} />
-              {reloadLoading ? "Обновляю базу…" : "Обновить загруженную базу данных"}
-            </button>
-          </div>
-          {reloadStatus && uploadProgress === null && (
-            <div className={`mb-3 flex items-center gap-2 p-2.5 rounded border text-xs ${reloadStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
-              <Icon name={reloadStatus.type === "success" ? "CheckCircle" : "XCircle"} size={13} className="shrink-0" />
-              {reloadStatus.msg}
             </div>
           )}
           <div className="overflow-x-auto rounded border border-border mb-4">
