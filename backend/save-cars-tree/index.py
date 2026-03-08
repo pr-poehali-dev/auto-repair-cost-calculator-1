@@ -39,11 +39,18 @@ def handler(event: dict, context) -> dict:
     if body.get("action") == "clear":
         conn = get_conn()
         cur = conn.cursor()
-        cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
+        cur.execute("SELECT current_schema()")
+        schema = cur.fetchone()[0]
+        cur.execute("DELETE FROM car_modifications")
+        cur.execute("DELETE FROM car_generations")
+        cur.execute("DELETE FROM car_models")
+        cur.execute("DELETE FROM car_brands")
         conn.commit()
+        cur.execute("SELECT COUNT(*) FROM car_brands")
+        remaining = cur.fetchone()[0]
         cur.close()
         conn.close()
-        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "cleared": True})}
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "cleared": True, "schema": schema, "remaining_brands": remaining})}
 
     brands = body.get("brands", [])
     chunk = body.get("chunk", 0)
