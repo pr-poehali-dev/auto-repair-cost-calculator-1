@@ -35,6 +35,16 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
 
     body = json.loads(event.get("body") or "{}")
+
+    if body.get("action") == "clear":
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "cleared": True})}
+
     brands = body.get("brands", [])
     chunk = body.get("chunk", 0)
     total_chunks = body.get("total_chunks", 1)
