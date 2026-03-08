@@ -1,4 +1,5 @@
 {
+  "export-db-tables": "https://functions.poehali.dev/bb2bb98a-1efe-4710-b390-0b2b9cb7402c",
   "save-cars-tree": "https://functions.poehali.dev/1e853609-fb61-44ee-b891-395a0182cc16",
   "import-cars-cdn": "https://functions.poehali.dev/3a8905fe-fdf4-4d40-b2e7-25ea29c953fe",
   "load-admin-data": "https://functions.poehali.dev/29e28049-1517-455f-9455-fb5b931d0ba4",

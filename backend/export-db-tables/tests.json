@@ -1,0 +1,1 @@
+{"tests": [{"name": "OPTIONS preflight", "method": "OPTIONS", "path": "/", "expectedStatus": 200}, {"name": "List tables", "method": "GET", "path": "/", "expectedStatus": 200}, {"name": "Export car_brands", "method": "GET", "path": "/?table=car_brands", "expectedStatus": 200}]}

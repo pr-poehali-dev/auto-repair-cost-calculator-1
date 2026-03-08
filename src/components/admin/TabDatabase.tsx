@@ -11,6 +11,8 @@ import {
   filterAndDownloadOldCars,
 } from "@/components/admin/adminHelpers";
 
+const FUNC_EXPORT_DB = "https://functions.poehali.dev/bb2bb98a-1efe-4710-b390-0b2b9cb7402c";
+
 const autoSyncColors: Record<AutoSyncStatus, string> = {
   idle: "",
   syncing: "bg-blue-50 border-blue-200 text-blue-700",
@@ -118,6 +120,59 @@ const TabDatabase = () => {
   const [dbReady, setDbReady] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const filledFileRef = useRef<HTMLInputElement>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportStatus, setExportStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  const handleExportDbTables = async () => {
+    setExportLoading(true);
+    setExportStatus({ type: "success", msg: "Загружаю таблицы с сервера…" });
+    try {
+      const tableNames = ["admin_data", "car_brands", "car_models", "car_generations", "car_modifications"];
+      const allData: Record<string, Record<string, unknown>[]> = {};
+      for (const t of tableNames) {
+        let allRows: Record<string, unknown>[] = [];
+        let offset = 0;
+        const limit = 3000;
+        while (true) {
+          setExportStatus({ type: "success", msg: `Загружаю ${t}… (${allRows.length} строк)` });
+          const res = await fetch(`${FUNC_EXPORT_DB}?table=${t}&offset=${offset}&limit=${limit}`);
+          if (!res.ok) throw new Error(`Ошибка загрузки ${t}`);
+          const d = await res.json();
+          const parsed = typeof d === "string" ? JSON.parse(d) : d;
+          allRows = allRows.concat(parsed.rows);
+          if (allRows.length >= parsed.total) break;
+          offset += limit;
+        }
+        allData[t] = allRows;
+      }
+      setExportStatus({ type: "success", msg: "Формирую Excel…" });
+      const wb = XLSX.utils.book_new();
+      for (const [name, rows] of Object.entries(allData)) {
+        if (rows.length === 0) {
+          const ws = XLSX.utils.aoa_to_sheet([["Таблица пуста"]]);
+          XLSX.utils.book_append_sheet(wb, ws, name);
+          continue;
+        }
+        const headers = Object.keys(rows[0]);
+        const data = rows.map(r => headers.map(h => {
+          const v = r[h];
+          if (v === null || v === undefined) return "";
+          if (typeof v === "object") return JSON.stringify(v);
+          return v;
+        }));
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+        ws["!cols"] = headers.map(() => ({ wch: 20 }));
+        XLSX.utils.book_append_sheet(wb, ws, name);
+      }
+      XLSX.writeFile(wb, "экспорт_базы_данных.xlsx");
+      setExportStatus({ type: "success", msg: "Файл скачан!" });
+      setTimeout(() => setExportStatus(null), 3000);
+    } catch (e) {
+      setExportStatus({ type: "error", msg: e instanceof Error ? e.message : "Ошибка экспорта" });
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const uploadCarsToBackend = async (file: File, mode: "replace" | "merge") => {
     setUploadProgress(0);
@@ -457,17 +512,32 @@ const TabDatabase = () => {
             </div>
           )}
           {carDbCount > 0 && uploadProgress === null && (
-            <div className="mb-3 flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-              <span className="flex items-center gap-2">
-                <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
-              </span>
-              {carDatabase.length > 0 && (
-                <button
-                  onClick={() => downloadCarsAsDbFormat(carDatabase)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-800 bg-green-100 hover:bg-green-200 rounded transition-colors"
-                >
-                  <Icon name="Download" size={12} />Скачать Excel
-                </button>
+            <div className="mb-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+                <span className="flex items-center gap-2">
+                  <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
+                </span>
+                {carDatabase.length > 0 && (
+                  <button
+                    onClick={() => downloadCarsAsDbFormat(carDatabase)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-800 bg-green-100 hover:bg-green-200 rounded transition-colors"
+                  >
+                    <Icon name="Download" size={12} />Скачать Excel
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={handleExportDbTables}
+                disabled={exportLoading}
+                className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded transition-colors disabled:opacity-50"
+              >
+                <Icon name={exportLoading ? "Loader" : "Database"} size={14} className={exportLoading ? "animate-spin" : ""} />
+                {exportLoading ? "Загружаю…" : "Скачать таблицы базы данных для сервера"}
+              </button>
+              {exportStatus && (
+                <p className={`text-xs px-2 ${exportStatus.type === "error" ? "text-red-600" : "text-blue-600"}`}>
+                  {exportStatus.msg}
+                </p>
               )}
             </div>
           )}
