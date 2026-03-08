@@ -229,25 +229,25 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setReloadLoading(true);
     setReloadStatus(null);
 
-    const MAX_MODELS_PER_CHUNK = 3;
     type Chunk = CarBrand[];
     const chunks: Chunk[] = [];
 
     for (const brand of source) {
       const modCount = brand.models.reduce((s, m) => s + m.generations.reduce((s2, g) => s2 + g.modifications.length, 0), 0);
-      if (modCount <= 500) {
+      if (modCount <= 300) {
         chunks.push([brand]);
       } else {
-        for (let j = 0; j < brand.models.length; j += MAX_MODELS_PER_CHUNK) {
-          const slice = brand.models.slice(j, j + MAX_MODELS_PER_CHUNK);
-          chunks.push([{ ...brand, models: slice }]);
+        for (const model of brand.models) {
+          chunks.push([{ ...brand, models: [model] }]);
         }
       }
     }
 
     let savedMods = 0;
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
     try {
       for (let i = 0; i < chunks.length; i++) {
+        if (i > 0) await delay(150);
         setReloadStatus({ type: "success", msg: `Сохраняю на сервер… ${i + 1}/${chunks.length} (${chunks[i][0]?.name ?? ""})` });
         const res = await fetch(FUNC_SAVE_CARS_TREE, {
           method: "POST",

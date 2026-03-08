@@ -1,8 +1,9 @@
-"""Сохранение дерева автомобилей (CarBrand[]) из фронтенда в PostgreSQL чанками."""
+"""Сохранение дерева автомобилей (CarBrand[]) из фронтенда в PostgreSQL."""
 import json
 import os
 import re
 import psycopg2
+from psycopg2.extras import execute_values
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -20,7 +21,7 @@ def get_conn():
 
 
 def handler(event: dict, context) -> dict:
-    """Принимает дерево CarBrand[] и сохраняет в PostgreSQL."""
+    """Принимает дерево CarBrand[] и сохраняет в PostgreSQL батчами."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
@@ -31,7 +32,7 @@ def handler(event: dict, context) -> dict:
         conn.commit()
         cur.close()
         conn.close()
-        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "msg": "DB cleared"})}
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
 
     body = json.loads(event.get("body") or "{}")
     brands = body.get("brands", [])
@@ -47,6 +48,7 @@ def handler(event: dict, context) -> dict:
 
     if chunk == 0 and mode == "replace":
         cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
+        conn.commit()
 
     brands_batch = []
     models_batch = []
@@ -73,8 +75,8 @@ def handler(event: dict, context) -> dict:
                         modid, gid,
                         mod.get("name", ""),
                         mod.get("engine", ""),
-                        mod.get("transmission", "—"),
-                        mod.get("power", "—"),
+                        mod.get("transmission", "") or "—",
+                        mod.get("power", "") or "—",
                         mod.get("engineType", ""),
                         mod.get("engineCode", ""),
                         mod.get("driveType", ""),
@@ -98,41 +100,41 @@ def handler(event: dict, context) -> dict:
                     total_mods += 1
 
     if brands_batch:
-        cur.executemany(
-            "INSERT INTO car_brands (id, name) VALUES (%s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
-            brands_batch
-        )
+        execute_values(cur,
+            "INSERT INTO car_brands (id, name) VALUES %s ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
+            brands_batch)
+
     if models_batch:
-        cur.executemany(
-            "INSERT INTO car_models (id, brand_id, name) VALUES (%s, %s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
-            models_batch
-        )
+        execute_values(cur,
+            "INSERT INTO car_models (id, brand_id, name) VALUES %s ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
+            models_batch)
+
     if gens_batch:
-        cur.executemany(
-            "INSERT INTO car_generations (id, model_id, name, years) VALUES (%s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, years=EXCLUDED.years",
-            gens_batch
-        )
+        execute_values(cur,
+            "INSERT INTO car_generations (id, model_id, name, years) VALUES %s ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, years=EXCLUDED.years",
+            gens_batch)
+
     if mods_batch:
-        cur.executemany("""
-            INSERT INTO car_modifications (
-                id, generation_id, name, engine, transmission, power,
-                engine_type, engine_code, drive_type,
-                body_type, seats, length_mm, width_mm, height_mm, wheelbase_mm,
-                engine_volume_cc, turbo_type,
-                front_brakes, rear_brakes, front_suspension, rear_suspension,
-                fuel_type, fuel_city_l, fuel_highway_l, fuel_mixed_l,
-                cylinder_layout, cylinder_count
-            ) VALUES (
-                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
-            ) ON CONFLICT (id) DO UPDATE SET
-                name=EXCLUDED.name, engine=EXCLUDED.engine,
-                transmission=EXCLUDED.transmission, power=EXCLUDED.power,
-                engine_type=EXCLUDED.engine_type, engine_code=EXCLUDED.engine_code,
-                drive_type=EXCLUDED.drive_type, body_type=EXCLUDED.body_type,
-                front_brakes=EXCLUDED.front_brakes, rear_brakes=EXCLUDED.rear_brakes,
-                front_suspension=EXCLUDED.front_suspension, rear_suspension=EXCLUDED.rear_suspension,
-                fuel_type=EXCLUDED.fuel_type, turbo_type=EXCLUDED.turbo_type
-        """, mods_batch)
+        BATCH = 200
+        for i in range(0, len(mods_batch), BATCH):
+            execute_values(cur, """
+                INSERT INTO car_modifications (
+                    id, generation_id, name, engine, transmission, power,
+                    engine_type, engine_code, drive_type,
+                    body_type, seats, length_mm, width_mm, height_mm, wheelbase_mm,
+                    engine_volume_cc, turbo_type,
+                    front_brakes, rear_brakes, front_suspension, rear_suspension,
+                    fuel_type, fuel_city_l, fuel_highway_l, fuel_mixed_l,
+                    cylinder_layout, cylinder_count
+                ) VALUES %s ON CONFLICT (id) DO UPDATE SET
+                    name=EXCLUDED.name, engine=EXCLUDED.engine,
+                    transmission=EXCLUDED.transmission, power=EXCLUDED.power,
+                    engine_type=EXCLUDED.engine_type, engine_code=EXCLUDED.engine_code,
+                    drive_type=EXCLUDED.drive_type, body_type=EXCLUDED.body_type,
+                    front_brakes=EXCLUDED.front_brakes, rear_brakes=EXCLUDED.rear_brakes,
+                    front_suspension=EXCLUDED.front_suspension, rear_suspension=EXCLUDED.rear_suspension,
+                    fuel_type=EXCLUDED.fuel_type, turbo_type=EXCLUDED.turbo_type
+            """, mods_batch[i:i+BATCH])
 
     conn.commit()
     cur.close()
