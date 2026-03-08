@@ -323,8 +323,9 @@ const Index = () => {
     reloadCarDb();
     if (!autoSyncRanRef.current) {
       autoSyncRanRef.current = true;
+      const enabled = loadLS<boolean>(LS_CARS_URL_ENABLED, false);
       const url = loadLS<string>(LS_CARS_URL, "");
-      if (url) runAutoSync(url);
+      if (enabled && url) runAutoSync(url);
     }
     if (!dbLoadedRef.current) {
       dbLoadedRef.current = true;
