@@ -214,7 +214,7 @@ const StepBadge = ({ n, active, done, label }: { n: number; active: boolean; don
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
-  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, reloadCarDb } = useAppData();
+  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, reloadCarDb, dbSyncStatus } = useAppData();
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [reloadLoading, setReloadLoading] = useState(false);
   const [reloadStatus, setReloadStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -409,9 +409,21 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="font-montserrat font-bold text-2xl text-foreground">Панель администратора</h2>
-        <p className="text-muted-foreground text-sm mt-1">Управление системой Remtech</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="font-montserrat font-bold text-2xl text-foreground">Панель администратора</h2>
+          <p className="text-muted-foreground text-sm mt-1">Управление системой Remtech</p>
+        </div>
+        {dbSyncStatus !== "idle" && (
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+            dbSyncStatus === "saving" ? "bg-blue-50 text-blue-600 border border-blue-200" :
+            dbSyncStatus === "saved" ? "bg-green-50 text-green-600 border border-green-200" :
+            "bg-red-50 text-red-600 border border-red-200"
+          }`}>
+            <Icon name={dbSyncStatus === "saving" ? "Loader" : dbSyncStatus === "saved" ? "CloudCheck" : "CloudOff"} size={13} className={dbSyncStatus === "saving" ? "animate-spin" : ""} fallback={dbSyncStatus === "saved" ? "Check" : "X"} />
+            {dbSyncStatus === "saving" ? "Сохраняю..." : dbSyncStatus === "saved" ? "Сохранено на сервер" : "Ошибка сохранения"}
+          </div>
+        )}
       </div>
 
       {/* Tab bar */}

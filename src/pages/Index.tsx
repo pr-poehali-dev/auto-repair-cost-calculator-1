@@ -37,14 +37,24 @@ const DB_KEY_MAP: Record<string, string> = {
   [LS_BRANCHES]: "branches",
 };
 
+const dbSyncState = { setter: null as ((s: DbSyncStatus) => void) | null, timer: null as ReturnType<typeof setTimeout> | null };
+
 function saveToDb(lsKey: string, value: unknown) {
   const dbKey = DB_KEY_MAP[lsKey];
   if (!dbKey) return;
+  dbSyncState.setter?.("saving");
+  if (dbSyncState.timer) clearTimeout(dbSyncState.timer);
   fetch(FUNC_SAVE_ADMIN, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key: dbKey, value }),
-  }).catch(() => {});
+  }).then((r) => {
+    dbSyncState.setter?.(r.ok ? "saved" : "error");
+    dbSyncState.timer = setTimeout(() => dbSyncState.setter?.("idle"), 3000);
+  }).catch(() => {
+    dbSyncState.setter?.("error");
+    dbSyncState.timer = setTimeout(() => dbSyncState.setter?.("idle"), 5000);
+  });
 }
 import Layout from "@/components/Layout";
 import CalculatorPage from "@/components/CalculatorPage";
@@ -159,6 +169,7 @@ export const LINK_COLORS = [
 ];
 
 export type AutoSyncStatus = "idle" | "syncing" | "done" | "error";
+export type DbSyncStatus = "idle" | "saving" | "saved" | "error";
 
 interface AppDataContextType {
   carDatabase: CarBrand[];
@@ -182,6 +193,7 @@ interface AppDataContextType {
   autoSyncStatus: AutoSyncStatus;
   autoSyncMsg: string;
   triggerAutoSync: () => void;
+  dbSyncStatus: DbSyncStatus;
 }
 
 export const AppDataContext = createContext<AppDataContextType>({
@@ -206,6 +218,7 @@ export const AppDataContext = createContext<AppDataContextType>({
   autoSyncStatus: "idle",
   autoSyncMsg: "",
   triggerAutoSync: () => {},
+  dbSyncStatus: "idle",
 });
 
 export const useAppData = () => useContext(AppDataContext);
@@ -225,7 +238,10 @@ const Index = () => {
   const [carsUrlEnabled, setCarsUrlEnabledRaw] = useState<boolean>(() => loadLS<boolean>(LS_CARS_URL_ENABLED, false));
   const [autoSyncStatus, setAutoSyncStatus] = useState<AutoSyncStatus>("idle");
   const [autoSyncMsg, setAutoSyncMsg] = useState<string>("");
+  const [dbSyncStatus, setDbSyncStatus] = useState<DbSyncStatus>("idle");
   const autoSyncRanRef = useRef(false);
+
+  useEffect(() => { dbSyncState.setter = setDbSyncStatus; return () => { dbSyncState.setter = null; }; }, []);
 
   const setCarDatabase = (data: CarBrand[]) => { setCarDatabaseRaw(data); saveLS(LS_CARS, data); };
   const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); saveToDb(LS_WORKS, data); };
@@ -358,13 +374,13 @@ const Index = () => {
   };
 
   return (
-    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, workFilters, setWorkFilters, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync }}>
+    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, workFilters, setWorkFilters, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync, dbSyncStatus }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         <div style={{ display: activeTab === "calculator" ? undefined : "none" }}>
           <CalculatorPage onAddToHistory={addToHistory} />
         </div>
         <div style={{ display: activeTab === "admin" ? undefined : "none" }}>
-          <AdminPage ratePerHour={ratePerHour} onRateChange={(v: number) => { setRatePerHour(v); fetch(FUNC_SAVE_ADMIN, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "settings", value: { ratePerHour: v } }) }).catch(() => {}); }} />
+          <AdminPage ratePerHour={ratePerHour} onRateChange={(v: number) => { setRatePerHour(v); setDbSyncStatus("saving"); fetch(FUNC_SAVE_ADMIN, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "settings", value: { ratePerHour: v } }) }).then((r) => { setDbSyncStatus(r.ok ? "saved" : "error"); setTimeout(() => setDbSyncStatus("idle"), 3000); }).catch(() => { setDbSyncStatus("error"); setTimeout(() => setDbSyncStatus("idle"), 5000); }); }} />
         </div>
         <div style={{ display: activeTab === "history" ? undefined : "none" }}>
           <HistoryPage history={history} onClear={() => setHistory([])} />
