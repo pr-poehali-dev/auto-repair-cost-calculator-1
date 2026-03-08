@@ -33,6 +33,18 @@ def g(row, i):
     return "" if s in ("None", "none", "") else s
 
 
+def num(val):
+    if val is None or val == "":
+        return None
+    s = str(val).strip().replace(",", ".").replace(" ", "").replace("\xa0", "")
+    if s in ("None", "none", ""):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def make_col_index(header: list) -> dict:
     """Строит словарь название_колонки -> индекс (регистронезависимо, без лишних пробелов)."""
     return {str(h).strip().lower(): i for i, h in enumerate(header)}
@@ -204,24 +216,24 @@ def process_rows(cur, rows, col_idx: dict):
 
         mods_batch.append((
             mod_id, gen_id, mod_name, engine, transmission, power,
-            body_type, seats, length_mm, width_mm, height_mm, wheelbase_mm,
-            track_front_mm, track_rear_mm, curb_weight_kg, wheel_size, ground_clearance_mm,
-            trunk_max_l, trunk_min_l, gross_weight_kg, disk_size, clearance_mm,
-            track_front_width_mm, track_rear_width_mm, payload_kg, train_weight_kg, axle_load_kg,
-            loading_height_mm, cargo_compartment_dims, cargo_volume_m3, bolt_pattern,
-            engine_type, engine_volume_cc, power_rpm, torque_nm, intake_type,
-            cylinder_layout, cylinder_count, compression_ratio, valves_per_cylinder, turbo_type,
-            bore_mm, stroke_mm, engine_model, engine_location, power_kw, torque_rpm,
+            body_type, num(seats), num(length_mm), num(width_mm), num(height_mm), num(wheelbase_mm),
+            num(track_front_mm), num(track_rear_mm), num(curb_weight_kg), wheel_size, num(ground_clearance_mm),
+            num(trunk_max_l), num(trunk_min_l), num(gross_weight_kg), disk_size, num(clearance_mm),
+            num(track_front_width_mm), num(track_rear_width_mm), num(payload_kg), num(train_weight_kg), num(axle_load_kg),
+            num(loading_height_mm), cargo_compartment_dims, num(cargo_volume_m3), bolt_pattern,
+            engine_type, num(engine_volume_cc), num(power_rpm), num(torque_nm), intake_type,
+            cylinder_layout, num(cylinder_count), num(compression_ratio), num(valves_per_cylinder), turbo_type,
+            num(bore_mm), num(stroke_mm), engine_model, engine_location, num(power_kw), num(torque_rpm),
             intercooler, engine_code, timing_system, fuel_consumption_method,
-            gear_count, drive_type, turning_diameter_m,
-            fuel_type, max_speed_kmh, acceleration_100, fuel_tank_l, eco_standard,
-            fuel_city_l, fuel_highway_l, fuel_mixed_l, range_km, co2_g_km,
+            num(gear_count), drive_type, num(turning_diameter_m),
+            fuel_type, num(max_speed_kmh), num(acceleration_100), num(fuel_tank_l), eco_standard,
+            num(fuel_city_l), num(fuel_highway_l), num(fuel_mixed_l), num(range_km), num(co2_g_km),
             front_brakes, rear_brakes, front_suspension, rear_suspension,
-            doors_count, country_of_origin, vehicle_class, steering_position,
-            safety_rating, safety_rating_name,
-            battery_capacity_kwh, electric_range_km, charge_time_h, battery_type,
-            battery_temp_range_c, fast_charge_time_h, fast_charge_desc, charge_connector_type,
-            consumption_kwh_per_100km, max_charge_power_kw, battery_available_kwh, charge_cycles,
+            num(doors_count), country_of_origin, vehicle_class, steering_position,
+            num(safety_rating), safety_rating_name,
+            num(battery_capacity_kwh), num(electric_range_km), num(charge_time_h), battery_type,
+            battery_temp_range_c, num(fast_charge_time_h), fast_charge_desc, charge_connector_type,
+            num(consumption_kwh_per_100km), num(max_charge_power_kw), num(battery_available_kwh), num(charge_cycles),
         ))
         mods_seen.add(mod_id)
         total += 1

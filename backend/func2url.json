@@ -1,4 +1,5 @@
 {
+  "load-cars-from-url": "https://functions.poehali.dev/6a9fc23a-e05b-4445-ac41-3ff11fcf2b69",
   "parse-yandex-chunks": "https://functions.poehali.dev/386bb2c7-2a1c-44b9-a477-bb81f6c8ad68",
   "parse-yandex-file": "https://functions.poehali.dev/f802c916-bdfb-4ef7-a22c-a1237da0580d",
   "fetch-yandex-file": "https://functions.poehali.dev/768a84bf-ea8e-43a1-a6ae-9a830e80b9f3",
