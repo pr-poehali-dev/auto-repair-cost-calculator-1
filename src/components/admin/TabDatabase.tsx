@@ -512,35 +512,35 @@ const TabDatabase = () => {
             </div>
           )}
           {carDbCount > 0 && uploadProgress === null && (
-            <div className="mb-3 space-y-2">
-              <div className="flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-                <span className="flex items-center gap-2">
-                  <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
-                </span>
-                {carDatabase.length > 0 && (
-                  <button
-                    onClick={() => downloadCarsAsDbFormat(carDatabase)}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-800 bg-green-100 hover:bg-green-200 rounded transition-colors"
-                  >
-                    <Icon name="Download" size={12} />Скачать Excel
-                  </button>
-                )}
-              </div>
-              <button
-                onClick={handleExportDbTables}
-                disabled={exportLoading}
-                className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded transition-colors disabled:opacity-50"
-              >
-                <Icon name={exportLoading ? "Loader" : "Database"} size={14} className={exportLoading ? "animate-spin" : ""} />
-                {exportLoading ? "Загружаю…" : "Скачать таблицы базы данных для сервера"}
-              </button>
-              {exportStatus && (
-                <p className={`text-xs px-2 ${exportStatus.type === "error" ? "text-red-600" : "text-blue-600"}`}>
-                  {exportStatus.msg}
-                </p>
+            <div className="mb-3 flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+              <span className="flex items-center gap-2">
+                <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
+              </span>
+              {carDatabase.length > 0 && (
+                <button
+                  onClick={() => downloadCarsAsDbFormat(carDatabase)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-800 bg-green-100 hover:bg-green-200 rounded transition-colors"
+                >
+                  <Icon name="Download" size={12} />Скачать Excel
+                </button>
               )}
             </div>
           )}
+          <div className="mb-3">
+            <button
+              onClick={handleExportDbTables}
+              disabled={exportLoading || carDbCount === 0}
+              className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Icon name={exportLoading ? "Loader" : "Database"} size={14} className={exportLoading ? "animate-spin" : ""} />
+              {exportLoading ? "Загружаю…" : "Скачать таблицы базы данных для сервера"}
+            </button>
+            {exportStatus && (
+              <p className={`text-xs px-2 mt-1 ${exportStatus.type === "error" ? "text-red-600" : "text-blue-600"}`}>
+                {exportStatus.msg}
+              </p>
+            )}
+          </div>
           <div className="overflow-x-auto rounded border border-border mb-4">
             <table className="text-xs border-collapse">
               <thead>
