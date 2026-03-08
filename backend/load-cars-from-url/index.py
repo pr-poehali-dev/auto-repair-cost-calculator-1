@@ -1,19 +1,23 @@
 """
-Загрузка чанка строк базы авто (уже распарсенных на фронте).
-POST: {rows: [[col0..col88], ...], chunk: 0, total_chunks: N, mode: 'replace'|'merge'}
-DELETE: очистить все таблицы авто.
+Скачивает Excel-файл по URL и загружает все автомобили в БД.
+POST: {"url": "https://...", "mode": "replace"|"merge"}
+GET: статус последней загрузки
 """
 import json
 import os
 import re
+import io
+import urllib.request
 import psycopg2
-from psycopg2.extras import execute_values
+import openpyxl
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
 }
+
+_status = {}
 
 
 def slug(s: str) -> str:
@@ -30,19 +34,17 @@ def get_conn():
 
 def g(row, i):
     v = row[i] if i < len(row) else None
-    s = str(v).strip() if v is not None else ""
+    if v is None:
+        return ""
+    s = str(v).strip()
     return "" if s in ("None", "none", "") else s
 
 
 def gn(row, i):
-    """Как g(), но возвращает None для пустых значений (для числовых полей БД).
-    Заменяет запятую на точку (европейский формат чисел)."""
     s = g(row, i)
     if not s:
         return None
-    s = s.replace(",", ".")
-    # Убираем пробелы-разделители тысяч (например "1 500")
-    s = s.replace(" ", "").replace("\xa0", "")
+    s = s.replace(",", ".").replace(" ", "").replace("\xa0", "")
     try:
         float(s)
         return s
@@ -51,11 +53,10 @@ def gn(row, i):
 
 
 def make_col_index(header: list) -> dict:
-    """Строит словарь название_колонки -> индекс (регистронезависимо, без лишних пробелов)."""
     return {str(h).strip().lower(): i for i, h in enumerate(header)}
 
 
-INSERT_MOD_BULK = """
+INSERT_MOD = """
     INSERT INTO car_modifications (
         id, generation_id, name, engine, transmission, power,
         body_type, seats, length_mm, width_mm, height_mm, wheelbase_mm,
@@ -76,33 +77,30 @@ INSERT_MOD_BULK = """
         battery_capacity_kwh, electric_range_km, charge_time_h, battery_type,
         battery_temp_range_c, fast_charge_time_h, fast_charge_desc, charge_connector_type,
         consumption_kwh_per_100km, max_charge_power_kw, battery_available_kwh, charge_cycles
-    ) VALUES %s ON CONFLICT (id) DO UPDATE SET
+    ) VALUES (
+        %s,%s,%s,%s,%s,%s,
+        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+    ) ON CONFLICT (id) DO UPDATE SET
         name=EXCLUDED.name, engine=EXCLUDED.engine,
         transmission=EXCLUDED.transmission, power=EXCLUDED.power
 """
 
 
 def process_rows(cur, rows, col_idx: dict):
-    brands_batch = []
-    models_batch = []
-    gens_batch = []
-    mods_batch = []
-    brands_seen = set()
-    models_seen = set()
-    gens_seen = set()
-    mods_seen = set()
+    brands_batch, models_batch, gens_batch, mods_batch = [], [], [], []
+    brands_seen, models_seen, gens_seen, mods_seen = set(), set(), set(), set()
     total = 0
     skipped = 0
 
-    def gc(row, col_name: str, fallback_i: int) -> str:
-        """Получить значение по имени колонки или по fallback-индексу."""
+    def gc(row, col_name, fallback_i):
         i = col_idx.get(col_name.lower())
-        if i is not None:
-            return g(row, i)
-        return g(row, fallback_i)
+        return g(row, i if i is not None else fallback_i)
 
-    def gcn(row, col_name: str, fallback_i: int):
-        """Как gc(), но возвращает None для пустых (числовые поля БД)."""
+    def gcn(row, col_name, fallback_i):
         s = gc(row, col_name, fallback_i)
         return s if s else None
 
@@ -183,16 +181,22 @@ def process_rows(cur, rows, col_idx: dict):
         engine = " ".join(parts) if parts else mod_name
         power = power_val or "—"
 
-        body_type = gc(row, "тип кузова", 7); seats = gcn(row, "количество мест", 8)
-        length_mm = gcn(row, "длина [мм]", 9); width_mm = gcn(row, "ширина [мм]", 10)
-        height_mm = gcn(row, "высота [мм]", 11); wheelbase_mm = gcn(row, "колёсная база [мм]", 12)
-        track_front_mm = gcn(row, "колея передняя [мм]", 13); track_rear_mm = gcn(row, "колея задняя [мм]", 14)
+        body_type = gc(row, "тип кузова", 7)
+        seats = gcn(row, "количество мест", 8)
+        length_mm = gcn(row, "длина [мм]", 9)
+        width_mm = gcn(row, "ширина [мм]", 10)
+        height_mm = gcn(row, "высота [мм]", 11)
+        wheelbase_mm = gcn(row, "колёсная база [мм]", 12)
+        track_front_mm = gcn(row, "колея передняя [мм]", 13)
+        track_rear_mm = gcn(row, "колея задняя [мм]", 14)
         curb_weight_kg = gcn(row, "снаряженная масса [кг]", 15)
-        wheel_size = gc(row, "размер колёс", 16); ground_clearance_mm = gcn(row, "дорожный просвет [мм]", 17)
+        wheel_size = gc(row, "размер колёс", 16)
+        ground_clearance_mm = gcn(row, "дорожный просвет [мм]", 17)
         trunk_max_l = gcn(row, "объем багажника максимальный [л]", 18)
         trunk_min_l = gcn(row, "объем багажника минимальный [л]", 19)
         gross_weight_kg = gcn(row, "полная масса [кг]", 20)
-        disk_size = gc(row, "размер дисков", 21); clearance_mm = gcn(row, "клиренс [мм]", 22)
+        disk_size = gc(row, "размер дисков", 21)
+        clearance_mm = gcn(row, "клиренс [мм]", 22)
         track_front_width_mm = gcn(row, "ширина передней колеи [мм]", 23)
         track_rear_width_mm = gcn(row, "ширина задней колеи [мм]", 24)
         payload_kg = gcn(row, "грузоподъёмность [кг]", 25)
@@ -210,12 +214,18 @@ def process_rows(cur, rows, col_idx: dict):
         fuel_city_l = gcn(row, "расход топлива в городе на 100 км [л]", 62)
         fuel_highway_l = gcn(row, "расход топлива на шоссе на 100 км [л]", 63)
         fuel_mixed_l = gcn(row, "расход топлива в смешанном цикле на 100 км [л]", 64)
-        range_km = gcn(row, "запас хода [км]", 65); co2_g_km = gcn(row, "выбросы co2 [г/км]", 66)
-        front_brakes = gc(row, "передние тормоза", 67); rear_brakes = gc(row, "задние тормоза", 68)
-        front_suspension = gc(row, "передняя подвеска", 69); rear_suspension = gc(row, "задняя подвеска", 70)
-        doors_count = gcn(row, "количество дверей", 71); country_of_origin = gc(row, "страна марки", 72)
-        vehicle_class = gc(row, "класс автомобиля", 73); steering_position = gc(row, "расположение руля", 74)
-        safety_rating = gcn(row, "оценка безопасности", 75); safety_rating_name = gc(row, "название рейтинга", 76)
+        range_km = gcn(row, "запас хода [км]", 65)
+        co2_g_km = gcn(row, "выбросы co2 [г/км]", 66)
+        front_brakes = gc(row, "передние тормоза", 67)
+        rear_brakes = gc(row, "задние тормоза", 68)
+        front_suspension = gc(row, "передняя подвеска", 69)
+        rear_suspension = gc(row, "задняя подвеска", 70)
+        doors_count = gcn(row, "количество дверей", 71)
+        country_of_origin = gc(row, "страна марки", 72)
+        vehicle_class = gc(row, "класс автомобиля", 73)
+        steering_position = gc(row, "расположение руля", 74)
+        safety_rating = gcn(row, "оценка безопасности", 75)
+        safety_rating_name = gc(row, "название рейтинга", 76)
 
         mods_batch.append((
             mod_id, gen_id, mod_name, engine, transmission, power,
@@ -242,83 +252,106 @@ def process_rows(cur, rows, col_idx: dict):
         total += 1
 
     if brands_batch:
-        execute_values(cur,
-            "INSERT INTO car_brands (id, name) VALUES %s ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
+        cur.executemany(
+            "INSERT INTO car_brands (id, name) VALUES (%s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
             brands_batch
         )
     if models_batch:
-        execute_values(cur,
-            "INSERT INTO car_models (id, brand_id, name) VALUES %s ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
+        cur.executemany(
+            "INSERT INTO car_models (id, brand_id, name) VALUES (%s, %s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
             models_batch
         )
     if gens_batch:
-        execute_values(cur,
-            "INSERT INTO car_generations (id, model_id, name, years) VALUES %s ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, years=EXCLUDED.years",
+        cur.executemany(
+            "INSERT INTO car_generations (id, model_id, name, years) VALUES (%s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, years=EXCLUDED.years",
             gens_batch
         )
     if mods_batch:
-        execute_values(cur, INSERT_MOD_BULK, mods_batch)
+        cur.executemany(INSERT_MOD, mods_batch)
 
     return total, skipped
 
 
 def handler(event: dict, context) -> dict:
-    """Загрузка чанка строк авто (JSON-массив). POST: {rows, chunk, total_chunks, mode}. DELETE: очистить."""
+    """Скачивает Excel по URL и загружает все автомобили в БД. POST: {url, mode}"""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
-    method = event.get("httpMethod", "POST")
+    method = event.get("httpMethod", "GET")
 
-    if method == "DELETE":
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
+    if method == "GET":
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps(_status or {"status": "idle"})}
 
     if method != "POST":
         return {"statusCode": 405, "headers": CORS, "body": json.dumps({"error": "Method not allowed"})}
 
     body = json.loads(event.get("body") or "{}")
-    rows = body.get("rows", [])
-    header = body.get("header", [])
-    chunk = body.get("chunk", 0)
-    total_chunks = body.get("total_chunks", 1)
+    url = body.get("url", "").strip()
     mode = body.get("mode", "replace")
 
-    if not rows:
-        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Нет строк"})}
+    if not url:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Не указан url"})}
 
-    col_idx = make_col_index(header) if header else {}
+    print(f"[INFO] Скачиваю файл: {url}")
+    with urllib.request.urlopen(url, timeout=60) as resp:
+        file_bytes = resp.read()
+    print(f"[INFO] Файл скачан, размер: {len(file_bytes)} байт")
 
-    # DEBUG: выводим заголовок и col_idx для диагностики
-    if chunk == 0:
-        print(f"[DEBUG] header (first 10): {header[:10]}")
-        print(f"[DEBUG] col_idx keys (sample): {list(col_idx.keys())[:15]}")
-        if rows:
-            print(f"[DEBUG] first row (first 10 vals): {rows[0][:10]}")
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
 
+    all_rows = []
+    for row in ws.iter_rows(values_only=True):
+        all_rows.append([cell for cell in row])
+    wb.close()
+
+    print(f"[INFO] Строк в файле: {len(all_rows)}")
+
+    header_idx = 0
+    for i in range(min(5, len(all_rows))):
+        first = str(all_rows[i][0] or "").strip().lower()
+        if first in ("марка", "brand"):
+            header_idx = i
+            break
+
+    header_row = [str(c or "").strip() for c in all_rows[header_idx]]
+    data_rows = [list(r) for r in all_rows[header_idx + 1:] if any(c is not None and str(c).strip() not in ("", "None") for c in r)]
+
+    print(f"[INFO] Заголовков: {len(header_row)}, строк данных: {len(data_rows)}")
+    print(f"[INFO] Первые 5 заголовков: {header_row[:5]}")
+
+    if not data_rows:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Файл пустой или не содержит данных"})}
+
+    col_idx = make_col_index(header_row)
     conn = get_conn()
     cur = conn.cursor()
 
-    if chunk == 0 and mode == "replace":
+    if mode == "replace":
         cur.execute("TRUNCATE car_modifications, car_generations, car_models, car_brands RESTART IDENTITY CASCADE")
+        conn.commit()
 
-    total, skipped = process_rows(cur, rows, col_idx)
-    conn.commit()
+    CHUNK_SIZE = 200
+    total_inserted = 0
+    total_skipped = 0
+    chunks = [data_rows[i:i + CHUNK_SIZE] for i in range(0, len(data_rows), CHUNK_SIZE)]
+
+    for ci, chunk in enumerate(chunks):
+        inserted, skipped = process_rows(cur, chunk, col_idx)
+        conn.commit()
+        total_inserted += inserted
+        total_skipped += skipped
+        print(f"[INFO] Чанк {ci+1}/{len(chunks)}: +{inserted}, пропущено {skipped}")
+
     cur.close()
     conn.close()
 
-    return {
-        "statusCode": 200,
-        "headers": CORS,
-        "body": json.dumps({
-            "ok": True,
-            "chunk": chunk,
-            "total_chunks": total_chunks,
-            "inserted": total,
-            "skipped": skipped,
-        })
+    result = {
+        "ok": True,
+        "total_rows": len(data_rows),
+        "inserted": total_inserted,
+        "skipped": total_skipped,
+        "columns": len(header_row),
     }
+    print(f"[INFO] Готово: {result}")
+    return {"statusCode": 200, "headers": CORS, "body": json.dumps(result)}
