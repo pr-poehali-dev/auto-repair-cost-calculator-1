@@ -1,4 +1,4 @@
-"""Экспорт таблиц БД по одной: admin_data, car_brands, car_models, car_generations, car_modifications."""
+"""Экспорт таблиц БД по одной с автоматической нарезкой на порции до ~4.5МБ."""
 import json
 import os
 import psycopg2
@@ -9,6 +9,8 @@ CORS = {
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
 }
+
+MAX_BODY_BYTES = 4_500_000
 
 TABLES = {
     "admin_data": "SELECT key, value, updated_at::text as updated_at FROM admin_data ORDER BY key",
@@ -40,7 +42,7 @@ TABLES = {
 
 
 def handler(event: dict, context) -> dict:
-    """Выгружает одну таблицу БД по параметру ?table=имя. Без параметра — список таблиц."""
+    """Выгружает таблицу БД порциями до 4.5МБ. Фронт запрашивает offset/limit, сервер вернёт сколько влезет."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
@@ -71,10 +73,24 @@ def handler(event: dict, context) -> dict:
 
     query = TABLES[table] + f" LIMIT {limit} OFFSET {offset}"
     cur.execute(query)
-    rows = [dict(r) for r in cur.fetchall()]
+    all_rows = [dict(r) for r in cur.fetchall()]
 
     cur.close()
     conn.close()
+
+    envelope_overhead = 200
+    rows_to_send = []
+    current_size = envelope_overhead
+
+    for row in all_rows:
+        row_json = json.dumps(row, default=str, ensure_ascii=False)
+        row_size = len(row_json.encode("utf-8")) + 2
+        if current_size + row_size > MAX_BODY_BYTES and rows_to_send:
+            break
+        rows_to_send.append(row)
+        current_size += row_size
+
+    returned = len(rows_to_send)
 
     return {
         "statusCode": 200,
@@ -84,6 +100,7 @@ def handler(event: dict, context) -> dict:
             "total": total,
             "offset": offset,
             "limit": limit,
-            "rows": rows,
+            "returned": returned,
+            "rows": rows_to_send,
         }, default=str, ensure_ascii=False),
     }

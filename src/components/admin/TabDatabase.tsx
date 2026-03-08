@@ -132,16 +132,17 @@ const TabDatabase = () => {
       for (const t of tableNames) {
         let allRows: Record<string, unknown>[] = [];
         let offset = 0;
-        const limit = 3000;
+        const limit = 5000;
         while (true) {
           setExportStatus({ type: "success", msg: `Загружаю ${t}… (${allRows.length} строк)` });
           const res = await fetch(`${FUNC_EXPORT_DB}?table=${t}&offset=${offset}&limit=${limit}`);
           if (!res.ok) throw new Error(`Ошибка загрузки ${t}`);
           const d = await res.json();
           const parsed = typeof d === "string" ? JSON.parse(d) : d;
+          const returned = parsed.returned ?? parsed.rows.length;
           allRows = allRows.concat(parsed.rows);
-          if (allRows.length >= parsed.total) break;
-          offset += limit;
+          if (allRows.length >= parsed.total || returned === 0) break;
+          offset += returned;
         }
         allData[t] = allRows;
       }
