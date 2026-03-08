@@ -218,27 +218,16 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [reloadLoading, setReloadLoading] = useState(false);
   const [reloadStatus, setReloadStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const handleReloadDb = async () => {
-    setReloadLoading(true);
-    setReloadStatus(null);
-    try {
-      const FUNC_GET_CARS = "https://functions.poehali.dev/135a6c4a-9149-40f9-a7a8-cf2ce637fdb2";
-      const res = await fetch(FUNC_GET_CARS);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const raw = await res.json();
-      const tree = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (Array.isArray(tree) && tree.length > 0) {
-        setCarDatabase(tree);
-        await reloadCarDb();
-        setReloadStatus({ type: "success", msg: `База обновлена! Загружено ${tree.length} марок.` });
-      } else {
-        setReloadStatus({ type: "error", msg: "База пуста. Сначала загрузите Excel-файл." });
-      }
-    } catch (e) {
-      setReloadStatus({ type: "error", msg: `Ошибка: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
-    } finally {
-      setReloadLoading(false);
+  const handleReloadDb = () => {
+    const source = pendingCars ?? carDatabase;
+    if (!source || source.length === 0) {
+      setReloadStatus({ type: "error", msg: "Сначала загрузите Excel-файл с базой автомобилей." });
+      return;
     }
+    setCarDatabase(source);
+    setDbReady(true);
+    const total = source.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
+    setReloadStatus({ type: "success", msg: `База обновлена! ${source.length} марок, ${total.toLocaleString("ru-RU")} модификаций доступны на главной.` });
   };
 
   // Rate
@@ -624,11 +613,11 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                   <button
                     type="button"
                     onClick={handleReloadDb}
-                    disabled={reloadLoading || (!hasCars && carsStatus?.type !== "success")}
+                    disabled={!pendingCars && !hasCars}
                     className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Icon name={reloadLoading ? "Loader" : "RefreshCw"} size={14} className={reloadLoading ? "animate-spin" : ""} />
-                    {reloadLoading ? "Обновляю базу…" : "Обновить загруженную базу данных"}
+                    <Icon name="RefreshCw" size={14} />
+                    Обновить загруженную базу данных
                   </button>
                   {reloadStatus && (
                     <div className={`mt-2 flex items-center gap-2 p-2.5 rounded border text-xs ${reloadStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
