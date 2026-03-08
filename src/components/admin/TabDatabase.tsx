@@ -1,5 +1,7 @@
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { UploadBlock, StepBadge } from "@/components/admin/AdminUploadBlocks";
@@ -163,50 +165,49 @@ const TabDatabase = () => {
         return ws;
       };
 
-      const saveFile = (wb: XLSX.WorkBook, idx: number) => {
-        const suffix = idx === 1 ? "" : ` ${idx}`;
-        XLSX.writeFile(wb, `экспорт_базы_данных${suffix}.xlsx`);
-      };
-
-      let fileIndex = 1;
+      const ROW_LIMIT = 5000;
+      const zip = new JSZip();
+      let fileCount = 0;
 
       for (const [name, rows] of Object.entries(allData)) {
         if (rows.length === 0) {
           const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, makeSheet(name, rows), name);
-          saveFile(wb, fileIndex);
-          fileIndex++;
+          const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+          zip.file(`${name}.xlsx`, buf);
+          fileCount++;
           continue;
         }
 
-        const ROW_LIMIT = 5000;
         if (rows.length <= ROW_LIMIT) {
+          setExportStatus({ type: "success", msg: `Формирую ${name} (${rows.length} строк)…` });
           const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, makeSheet(name, rows), name);
-          setExportStatus({ type: "success", msg: `Сохраняю ${name} (${rows.length} строк)…` });
-          saveFile(wb, fileIndex);
-          fileIndex++;
+          const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+          zip.file(`${name}.xlsx`, buf);
+          fileCount++;
         } else {
-          const totalParts = Math.ceil(rows.length / ROW_LIMIT);
-          console.log(`[export] ${name}: ${rows.length} строк → ${totalParts} файлов по ${ROW_LIMIT}`);
+          let partNum = 1;
           for (let i = 0; i < rows.length; i += ROW_LIMIT) {
             const chunk = rows.slice(i, i + ROW_LIMIT);
-            const partWb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(partWb, makeSheet(name, chunk), name);
             const from = i + 1;
             const to = Math.min(i + ROW_LIMIT, rows.length);
-            setExportStatus({ type: "success", msg: `Сохраняю файл ${fileIndex} (${name}: строки ${from}–${to} из ${rows.length})…` });
-            console.log(`[export] Saving file ${fileIndex}: ${name} rows ${from}-${to}`);
-            saveFile(partWb, fileIndex);
-            fileIndex++;
-            await new Promise(r => setTimeout(r, 600));
+            setExportStatus({ type: "success", msg: `Формирую ${name} ${partNum} (строки ${from}–${to} из ${rows.length})…` });
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, makeSheet(name, chunk), name);
+            const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+            zip.file(`${name}_${partNum}.xlsx`, buf);
+            fileCount++;
+            partNum++;
+            await new Promise(r => setTimeout(r, 50));
           }
         }
       }
 
-      const totalFiles = fileIndex - 1;
-      console.log(`[export] Done: ${totalFiles} files total`);
-      setExportStatus({ type: "success", msg: totalFiles > 1 ? `Скачано ${totalFiles} файлов!` : "Файл скачан!" });
+      setExportStatus({ type: "success", msg: `Архивирую ${fileCount} файлов…` });
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      saveAs(zipBlob, "экспорт_базы_данных.zip");
+      setExportStatus({ type: "success", msg: `Скачан архив с ${fileCount} файлами!` });
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e) {
       setExportStatus({ type: "error", msg: e instanceof Error ? e.message : "Ошибка экспорта" });
