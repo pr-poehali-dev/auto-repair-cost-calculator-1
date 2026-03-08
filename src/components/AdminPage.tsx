@@ -216,6 +216,20 @@ const StepBadge = ({ n, active, done, label }: { n: number; active: boolean; don
 const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, reloadCarDb } = useAppData();
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
+  const [reloadLoading, setReloadLoading] = useState(false);
+  const [reloadStatus, setReloadStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const handleReloadDb = async () => {
+    setReloadLoading(true);
+    setReloadStatus(null);
+    try {
+      await reloadCarDb();
+      setReloadStatus({ type: "success", msg: "База данных успешно обновлена!" });
+    } catch {
+      setReloadStatus({ type: "error", msg: "Ошибка при обновлении базы." });
+    } finally {
+      setReloadLoading(false);
+    }
+  };
 
   // Rate
   const [inputValue, setInputValue] = useState(ratePerHour.toString());
@@ -593,6 +607,26 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                     </table>
                   </div>
                 </UploadBlock>
+
+                {/* Кнопка обновления базы */}
+                <div className="p-4 border-2 border-dashed border-blue-400 rounded-lg bg-blue-50">
+                  <p className="text-xs text-blue-700 mb-2">После загрузки Excel-файла нажмите, чтобы обновить все справочники:</p>
+                  <button
+                    type="button"
+                    onClick={handleReloadDb}
+                    disabled={reloadLoading || (!hasCars && carsStatus?.type !== "success")}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Icon name={reloadLoading ? "Loader" : "RefreshCw"} size={14} className={reloadLoading ? "animate-spin" : ""} />
+                    {reloadLoading ? "Обновляю базу…" : "Обновить загруженную базу данных"}
+                  </button>
+                  {reloadStatus && (
+                    <div className={`mt-2 flex items-center gap-2 p-2.5 rounded border text-xs ${reloadStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+                      <Icon name={reloadStatus.type === "success" ? "CheckCircle" : "XCircle"} size={13} className="shrink-0" />
+                      {reloadStatus.msg}
+                    </div>
+                  )}
+                </div>
 
                 {/* Step 2 */}
                 <UploadBlock title="Шаг 2 — Загрузите список работ"
