@@ -326,50 +326,93 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportStatus, setExportStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
-  const handleExportDbTables = async () => {
+  const handleExportDbTables = () => {
+    const source = pendingCars ?? carDatabase;
+    if (!source || source.length === 0) {
+      setExportStatus({ type: "error", msg: "Сначала загрузите файл в Шаге 1" });
+      return;
+    }
     setExportLoading(true);
-    setExportStatus({ type: "success", msg: "Загружаю таблицы с сервера…" });
+    setExportStatus({ type: "success", msg: "Формирую таблицы…" });
     try {
-      const tableNames = ["admin_data", "car_brands", "car_models", "car_generations", "car_modifications"];
-      const allData: Record<string, Record<string, unknown>[]> = {};
-      for (const t of tableNames) {
-        let allRows: Record<string, unknown>[] = [];
-        let offset = 0;
-        const limit = 3000;
-        while (true) {
-          setExportStatus({ type: "success", msg: `Загружаю ${t}… (${allRows.length} строк)` });
-          const res = await fetch(`${FUNC_EXPORT_DB}?table=${t}&offset=${offset}&limit=${limit}`);
-          if (!res.ok) throw new Error(`Ошибка загрузки ${t}`);
-          const d = await res.json();
-          const parsed = typeof d === "string" ? JSON.parse(d) : d;
-          allRows = allRows.concat(parsed.rows);
-          if (allRows.length >= parsed.total) break;
-          offset += limit;
+      const slug = (s: string) => s.toLowerCase().replace(/[\s()/\\]+/g, "-").replace(/^-|-$/g, "");
+      const brandsRows: string[][] = [];
+      const modelsRows: string[][] = [];
+      const gensRows: string[][] = [];
+      const modsRows: string[][] = [];
+      for (const brand of source) {
+        const bid = brand.id || slug(brand.name);
+        brandsRows.push([bid, brand.name]);
+        for (const model of brand.models) {
+          const mid = model.id || `${bid}__${slug(model.name)}`;
+          modelsRows.push([mid, bid, model.name]);
+          for (const gen of model.generations) {
+            const gid = gen.id || `${mid}__${slug(gen.name)}`;
+            gensRows.push([gid, mid, gen.name, gen.years || ""]);
+            for (const mod of gen.modifications) {
+              const m = mod as Record<string, unknown>;
+              const v = (k: string) => String(m[k] ?? "");
+              const modid = mod.id || `${gid}__${slug(mod.name)}`;
+              modsRows.push([
+                modid, gid, mod.name, v("engine"), v("transmission"), v("power"),
+                v("bodyType"), v("seats"), v("lengthMm"), v("widthMm"), v("heightMm"), v("wheelbaseMm"),
+                v("trackFrontMm"), v("trackRearMm"), v("curbWeightKg"), v("wheelSize"), v("groundClearanceMm"),
+                v("trunkMaxL"), v("trunkMinL"), v("grossWeightKg"), v("diskSize"), v("clearanceMm"),
+                v("trackFrontWidthMm"), v("trackRearWidthMm"), v("payloadKg"), v("trainWeightKg"),
+                v("axleLoadKg"), v("loadingHeightMm"), v("cargoCompartmentDims"), v("cargoVolumeM3"), v("boltPattern"),
+                v("engineType"), v("engineVolumeCC"), v("powerRpm"), v("torqueNm"), v("intakeType"),
+                v("cylinderLayout"), v("cylinderCount"), v("compressionRatio"), v("valvesPerCylinder"), v("turboType"),
+                v("boreMm"), v("strokeMm"), v("engineModel"), v("engineLocation"), v("powerKw"),
+                v("torqueRpm"), v("intercooler"), v("engineCode"), v("timingSystem"), v("fuelConsumptionMethod"),
+                v("gearCount"), v("driveType"), v("turningDiameterM"),
+                v("fuelType"), v("maxSpeedKmh"), v("acceleration100"), v("fuelTankL"), v("ecoStandard"),
+                v("fuelCityL"), v("fuelHighwayL"), v("fuelMixedL"), v("rangeKm"), v("co2GKm"),
+                v("frontBrakes"), v("rearBrakes"), v("frontSuspension"), v("rearSuspension"),
+                v("doorsCount"), v("countryOfOrigin"), v("vehicleClass"), v("steeringPosition"),
+                v("safetyRating"), v("safetyRatingName"),
+                v("batteryCapacityKwh"), v("electricRangeKm"), v("chargeTimeH"), v("batteryType"),
+                v("batteryTempRangeC"), v("fastChargeTimeH"), v("fastChargeDesc"),
+                v("chargeConnectorType"), v("consumptionKwhPer100km"), v("maxChargePowerKw"),
+                v("batteryAvailableKwh"), v("chargeCycles"),
+              ]);
+            }
+          }
         }
-        allData[t] = allRows;
       }
-      setExportStatus({ type: "success", msg: "Формирую Excel…" });
       const wb = XLSX.utils.book_new();
-      for (const [name, rows] of Object.entries(allData)) {
-        if (rows.length === 0) {
-          const ws = XLSX.utils.aoa_to_sheet([["Таблица пуста"]]);
-          XLSX.utils.book_append_sheet(wb, ws, name);
-          continue;
-        }
-        const headers = Object.keys(rows[0]);
-        const data = rows.map(r => headers.map(h => {
-          const v = r[h];
-          if (v === null || v === undefined) return "";
-          if (typeof v === "object") return JSON.stringify(v);
-          return v;
-        }));
-        const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+      const addSheet = (name: string, headers: string[], rows: string[][]) => {
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
         ws["!cols"] = headers.map(() => ({ wch: 20 }));
         XLSX.utils.book_append_sheet(wb, ws, name);
-      }
-      XLSX.writeFile(wb, "экспорт_базы_данных.xlsx");
-      setExportStatus({ type: "success", msg: "Файл скачан!" });
-      setTimeout(() => setExportStatus(null), 3000);
+      };
+      addSheet("car_brands", ["id", "name"], brandsRows);
+      addSheet("car_models", ["id", "brand_id", "name"], modelsRows);
+      addSheet("car_generations", ["id", "model_id", "name", "years"], gensRows);
+      addSheet("car_modifications", [
+        "id", "generation_id", "name", "engine", "transmission", "power",
+        "body_type", "seats", "length_mm", "width_mm", "height_mm", "wheelbase_mm",
+        "track_front_mm", "track_rear_mm", "curb_weight_kg", "wheel_size", "ground_clearance_mm",
+        "trunk_max_l", "trunk_min_l", "gross_weight_kg", "disk_size", "clearance_mm",
+        "track_front_width_mm", "track_rear_width_mm", "payload_kg", "train_weight_kg",
+        "axle_load_kg", "loading_height_mm", "cargo_compartment_dims", "cargo_volume_m3", "bolt_pattern",
+        "engine_type", "engine_volume_cc", "power_rpm", "torque_nm", "intake_type",
+        "cylinder_layout", "cylinder_count", "compression_ratio", "valves_per_cylinder", "turbo_type",
+        "bore_mm", "stroke_mm", "engine_model", "engine_location", "power_kw",
+        "torque_rpm", "intercooler", "engine_code", "timing_system", "fuel_consumption_method",
+        "gear_count", "drive_type", "turning_diameter_m",
+        "fuel_type", "max_speed_kmh", "acceleration_100", "fuel_tank_l", "eco_standard",
+        "fuel_city_l", "fuel_highway_l", "fuel_mixed_l", "range_km", "co2_g_km",
+        "front_brakes", "rear_brakes", "front_suspension", "rear_suspension",
+        "doors_count", "country_of_origin", "vehicle_class", "steering_position",
+        "safety_rating", "safety_rating_name",
+        "battery_capacity_kwh", "electric_range_km", "charge_time_h", "battery_type",
+        "battery_temp_range_c", "fast_charge_time_h", "fast_charge_desc",
+        "charge_connector_type", "consumption_kwh_per_100km", "max_charge_power_kw",
+        "battery_available_kwh", "charge_cycles",
+      ], modsRows);
+      XLSX.writeFile(wb, "таблицы_базы_данных.xlsx");
+      setExportStatus({ type: "success", msg: `Готово! ${brandsRows.length} марок, ${modsRows.length} модификаций` });
+      setTimeout(() => setExportStatus(null), 4000);
     } catch (e) {
       setExportStatus({ type: "error", msg: e instanceof Error ? e.message : "Ошибка экспорта" });
     } finally {
@@ -751,7 +794,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                 <div className="mt-2">
                   <button
                     onClick={handleExportDbTables}
-                    disabled={exportLoading || (!hasCars && carDatabase.length === 0)}
+                    disabled={exportLoading || (!pendingCars && carDatabase.length === 0)}
                     className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Icon name={exportLoading ? "Loader" : "Database"} size={14} className={exportLoading ? "animate-spin" : ""} />
