@@ -127,79 +127,139 @@ const TabDatabase = () => {
 
   const handleExportDbTables = async () => {
     setExportLoading(true);
-    setExportStatus({ type: "success", msg: "Загружаю таблицы с сервера…" });
+    setExportStatus({ type: "success", msg: "Формирую таблицы…" });
     try {
-      const tableNames = ["admin_data", "car_brands", "car_models", "car_generations", "car_modifications"];
-      const allData: Record<string, Record<string, unknown>[]> = {};
-      for (const t of tableNames) {
-        let allRows: Record<string, unknown>[] = [];
-        let offset = 0;
-        const limit = 5000;
-        while (true) {
-          setExportStatus({ type: "success", msg: `Загружаю ${t}… (${allRows.length} строк)` });
-          const res = await fetch(`${FUNC_EXPORT_DB}?table=${t}&offset=${offset}&limit=${limit}`);
-          if (!res.ok) throw new Error(`Ошибка загрузки ${t}`);
-          const d = await res.json();
-          const parsed = typeof d === "string" ? JSON.parse(d) : d;
-          const returned = parsed.returned ?? parsed.rows.length;
-          allRows = allRows.concat(parsed.rows);
-          if (allRows.length >= parsed.total || returned === 0) break;
-          offset += returned;
-        }
-        allData[t] = allRows;
-      }
-      setExportStatus({ type: "success", msg: "Формирую Excel…" });
       const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
-      const makeSheet = (name: string, rows: Record<string, unknown>[]) => {
+      const brandsSet = new Map<string, { id: string; name: string }>();
+      const modelsSet = new Map<string, { id: string; brand_id: string; name: string }>();
+      const gensSet = new Map<string, { id: string; model_id: string; name: string; years: string }>();
+      const modRows: Record<string, unknown>[] = [];
+
+      const slug = (s: string) => s.toLowerCase().replace(/[\s()/\\]+/g, "-").replace(/^-|-$/g, "");
+      const makeId = (...parts: string[]) => parts.filter(Boolean).map(slug).join("__");
+
+      for (const brand of carDatabase) {
+        const brandId = slug(brand.name);
+        brandsSet.set(brandId, { id: brandId, name: brand.name });
+        for (const model of brand.models) {
+          const modelId = makeId(brandId, model.name);
+          modelsSet.set(modelId, { id: modelId, brand_id: brandId, name: model.name });
+          for (const gen of model.generations) {
+            const genId = makeId(modelId, gen.name || "default");
+            gensSet.set(genId, { id: genId, model_id: modelId, name: gen.name, years: gen.years || "" });
+            for (const mod of gen.modifications) {
+              const modId = makeId(genId, mod.name);
+              const m = mod as Record<string, unknown>;
+              const v = (key: string) => m[key] ?? "";
+              modRows.push({
+                id: modId, generation_id: genId, name: mod.name,
+                engine: mod.engine, transmission: mod.transmission, power: mod.power,
+                body_type: v("bodyType"), seats: v("seats"),
+                length_mm: v("lengthMm"), width_mm: v("widthMm"), height_mm: v("heightMm"),
+                wheelbase_mm: v("wheelbaseMm"), track_front_mm: v("trackFrontMm"),
+                track_rear_mm: v("trackRearMm"), curb_weight_kg: v("curbWeightKg"),
+                wheel_size: v("wheelSize"), ground_clearance_mm: v("groundClearanceMm"),
+                trunk_max_l: v("trunkMaxL"), trunk_min_l: v("trunkMinL"),
+                gross_weight_kg: v("grossWeightKg"), disk_size: v("diskSize"),
+                clearance_mm: v("clearanceMm"), track_front_width_mm: v("trackFrontWidthMm"),
+                track_rear_width_mm: v("trackRearWidthMm"), payload_kg: v("payloadKg"),
+                train_weight_kg: v("trainWeightKg"), axle_load_kg: v("axleLoadKg"),
+                loading_height_mm: v("loadingHeightMm"), cargo_compartment_dims: v("cargoCompartmentDims"),
+                cargo_volume_m3: v("cargoVolumeM3"), bolt_pattern: v("boltPattern"),
+                engine_type: v("engineType"), engine_volume_cc: v("engineVolumeCC"),
+                power_rpm: v("powerRpm"), torque_nm: v("torqueNm"), intake_type: v("intakeType"),
+                cylinder_layout: v("cylinderLayout"), cylinder_count: v("cylinderCount"),
+                compression_ratio: v("compressionRatio"), valves_per_cylinder: v("valvesPerCylinder"),
+                turbo_type: v("turboType"), bore_mm: v("boreMm"), stroke_mm: v("strokeMm"),
+                engine_model: v("engineModel"), engine_location: v("engineLocation"),
+                power_kw: v("powerKw"), torque_rpm: v("torqueRpm"),
+                intercooler: v("intercooler"), engine_code: v("engineCode"),
+                timing_system: v("timingSystem"), fuel_consumption_method: v("fuelConsumptionMethod"),
+                gear_count: v("gearCount"), drive_type: v("driveType"),
+                turning_diameter_m: v("turningDiameterM"), fuel_type: v("fuelType"),
+                max_speed_kmh: v("maxSpeedKmh"), acceleration_100: v("acceleration100"),
+                fuel_tank_l: v("fuelTankL"), eco_standard: v("ecoStandard"),
+                fuel_city_l: v("fuelCityL"), fuel_highway_l: v("fuelHighwayL"),
+                fuel_mixed_l: v("fuelMixedL"), range_km: v("rangeKm"), co2_g_km: v("co2GKm"),
+                front_brakes: v("frontBrakes"), rear_brakes: v("rearBrakes"),
+                front_suspension: v("frontSuspension"), rear_suspension: v("rearSuspension"),
+                doors_count: v("doorsCount"), country_of_origin: v("countryOfOrigin"),
+                vehicle_class: v("vehicleClass"), steering_position: v("steeringPosition"),
+                safety_rating: v("safetyRating"), safety_rating_name: v("safetyRatingName"),
+                battery_capacity_kwh: v("batteryCapacityKwh"), electric_range_km: v("electricRangeKm"),
+                charge_time_h: v("chargeTimeH"), battery_type: v("batteryType"),
+                battery_temp_range_c: v("batteryTempRangeC"), fast_charge_time_h: v("fastChargeTimeH"),
+                fast_charge_desc: v("fastChargeDesc"), charge_connector_type: v("chargeConnectorType"),
+                consumption_kwh_per_100km: v("consumptionKwhPer100km"),
+                max_charge_power_kw: v("maxChargePowerKw"),
+                battery_available_kwh: v("batteryAvailableKwh"), charge_cycles: v("chargeCycles"),
+              });
+            }
+          }
+        }
+      }
+
+      const allTables: [string, Record<string, unknown>[]][] = [
+        ["car_brands", Array.from(brandsSet.values())],
+        ["car_models", Array.from(modelsSet.values())],
+        ["car_generations", Array.from(gensSet.values())],
+        ["car_modifications", modRows],
+      ];
+
+      const makeSheet = (rows: Record<string, unknown>[]) => {
         if (rows.length === 0) return XLSX.utils.aoa_to_sheet([["Таблица пуста"]]);
         const headers = Object.keys(rows[0]);
         const data = rows.map(r => headers.map(h => {
-          const v = r[h];
-          if (v === null || v === undefined) return "";
-          if (typeof v === "object") return JSON.stringify(v);
-          return v;
+          const val = r[h];
+          if (val === null || val === undefined) return "";
+          if (typeof val === "object") return JSON.stringify(val);
+          return val;
         }));
         const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
         ws["!cols"] = headers.map(() => ({ wch: 20 }));
         return ws;
       };
 
-      const ROW_LIMIT = 5000;
       const zip = new JSZip();
       let fileCount = 0;
 
-      for (const [name, rows] of Object.entries(allData)) {
+      for (const [name, rows] of allTables) {
         if (rows.length === 0) {
           const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, makeSheet(name, rows), name);
-          const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
-          zip.file(`${name}.xlsx`, buf);
+          XLSX.utils.book_append_sheet(wb, makeSheet(rows), name);
+          zip.file(`${name}.xlsx`, XLSX.write(wb, { type: "array", bookType: "xlsx" }));
           fileCount++;
           continue;
         }
 
-        if (rows.length <= ROW_LIMIT) {
-          setExportStatus({ type: "success", msg: `Формирую ${name} (${rows.length} строк)…` });
+        setExportStatus({ type: "success", msg: `Формирую ${name} (${rows.length} строк)…` });
+        const testWb = XLSX.utils.book_new();
+        const sampleSize = Math.min(200, rows.length);
+        XLSX.utils.book_append_sheet(testWb, makeSheet(rows.slice(0, sampleSize)), name);
+        const sampleBuf = XLSX.write(testWb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+        const bytesPerRow = sampleBuf.byteLength / sampleSize;
+        const estimatedSize = bytesPerRow * rows.length;
+
+        if (estimatedSize <= MAX_FILE_BYTES) {
           const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, makeSheet(name, rows), name);
-          const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
-          zip.file(`${name}.xlsx`, buf);
+          XLSX.utils.book_append_sheet(wb, makeSheet(rows), name);
+          zip.file(`${name}.xlsx`, XLSX.write(wb, { type: "array", bookType: "xlsx" }));
           fileCount++;
         } else {
+          const rowsPerFile = Math.max(100, Math.floor((MAX_FILE_BYTES * 0.9) / bytesPerRow));
           let partNum = 1;
-          for (let i = 0; i < rows.length; i += ROW_LIMIT) {
-            const chunk = rows.slice(i, i + ROW_LIMIT);
+          for (let i = 0; i < rows.length; i += rowsPerFile) {
+            const chunk = rows.slice(i, i + rowsPerFile);
             const from = i + 1;
-            const to = Math.min(i + ROW_LIMIT, rows.length);
-            setExportStatus({ type: "success", msg: `Формирую ${name} ${partNum} (строки ${from}–${to} из ${rows.length})…` });
+            const to = Math.min(i + rowsPerFile, rows.length);
+            setExportStatus({ type: "success", msg: `${name} часть ${partNum} (строки ${from}–${to})…` });
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeSheet(name, chunk), name);
-            const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
-            zip.file(`${name}_${partNum}.xlsx`, buf);
+            XLSX.utils.book_append_sheet(wb, makeSheet(chunk), name);
+            zip.file(`${name}_${partNum}.xlsx`, XLSX.write(wb, { type: "array", bookType: "xlsx" }));
             fileCount++;
             partNum++;
-            await new Promise(r => setTimeout(r, 50));
+            await new Promise(r => setTimeout(r, 30));
           }
         }
       }
@@ -571,7 +631,7 @@ const TabDatabase = () => {
           <div className="mb-3">
             <button
               onClick={handleExportDbTables}
-              disabled={exportLoading || carDbCount === 0}
+              disabled={exportLoading || (carDbCount === 0 && carDatabase.length === 0)}
               className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Icon name={exportLoading ? "Loader" : "Database"} size={14} className={exportLoading ? "animate-spin" : ""} />
