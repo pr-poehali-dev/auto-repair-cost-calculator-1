@@ -6,6 +6,7 @@ import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplat
 
 const FUNC_SAVE_CARS_TREE = "https://functions.poehali.dev/1e853609-fb61-44ee-b891-395a0182cc16";
 const FUNC_EXPORT_DB = "https://functions.poehali.dev/bb2bb98a-1efe-4710-b390-0b2b9cb7402c";
+const FUNC_IMPORT_CSV = "https://functions.poehali.dev/4061ffdf-56ad-4f1f-b62b-e68b043e801f";
 import * as XLSX from "xlsx";
 import TabDashboard from "@/components/admin/TabDashboard";
 import TabBranches from "@/components/admin/TabBranches";
@@ -325,6 +326,116 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const filledFileRef = useRef<HTMLInputElement>(null);
   const [exportLoading, setExportLoading] = useState(false);
   const [exportStatus, setExportStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const handleImportCsvFiles = async (files: FileList) => {
+    setImportLoading(true);
+    setImportStatus({ type: "success", msg: "Читаю CSV файлы…" });
+    setImportProgress(0);
+    try {
+      const TABLE_ORDER = ["car_brands", "car_models", "car_generations", "car_modifications"];
+      const tableFiles: Record<string, { header: string[]; rows: string[][] }> = {};
+
+      for (const file of Array.from(files)) {
+        const text = await file.text();
+        const bom = text.startsWith("\uFEFF") ? text.slice(1) : text;
+        const lines = bom.split("\n").filter(l => l.trim());
+        if (lines.length < 2) continue;
+
+        const parseCsvLine = (line: string) => {
+          const result: string[] = [];
+          let current = "";
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (inQuotes) {
+              if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
+              else if (ch === '"') { inQuotes = false; }
+              else { current += ch; }
+            } else {
+              if (ch === '"') { inQuotes = true; }
+              else if (ch === ";") { result.push(current); current = ""; }
+              else { current += ch; }
+            }
+          }
+          result.push(current);
+          return result;
+        };
+
+        const header = parseCsvLine(lines[0]);
+        const rows = lines.slice(1).map(parseCsvLine);
+
+        let tableName = "";
+        for (const t of TABLE_ORDER) {
+          if (file.name.startsWith(t)) { tableName = t; break; }
+        }
+        if (!tableName) continue;
+
+        if (!tableFiles[tableName]) {
+          tableFiles[tableName] = { header, rows: [] };
+        }
+        tableFiles[tableName].rows.push(...rows);
+      }
+
+      const tablesToImport = TABLE_ORDER.filter(t => tableFiles[t]);
+      if (tablesToImport.length === 0) {
+        setImportStatus({ type: "error", msg: "Не найдены CSV файлы с именами car_brands, car_models, car_generations или car_modifications" });
+        setImportProgress(null);
+        setImportLoading(false);
+        return;
+      }
+
+      let totalRows = 0;
+      let processedRows = 0;
+      for (const t of tablesToImport) totalRows += tableFiles[t].rows.length;
+
+      const CHUNK_SIZE = 200;
+      let isFirst = true;
+
+      for (const tableName of tablesToImport) {
+        const { header, rows } = tableFiles[tableName];
+        const totalChunks = Math.ceil(rows.length / CHUNK_SIZE);
+
+        for (let ci = 0; ci < totalChunks; ci++) {
+          const chunk = rows.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE);
+          setImportStatus({ type: "success", msg: `Импорт ${tableName}… (${processedRows}/${totalRows})` });
+
+          const res = await fetch(FUNC_IMPORT_CSV, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              table: tableName,
+              header,
+              rows: chunk,
+              mode: isFirst ? "replace" : "merge",
+              chunk: ci,
+              total_chunks: totalChunks,
+            }),
+          });
+          isFirst = false;
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error((typeof err === "string" ? JSON.parse(err) : err).error || `Ошибка HTTP ${res.status}`);
+          }
+          processedRows += chunk.length;
+          setImportProgress(Math.round((processedRows / totalRows) * 100));
+        }
+      }
+
+      setImportProgress(100);
+      setImportStatus({ type: "success", msg: `Импортировано ${processedRows.toLocaleString("ru-RU")} строк в ${tablesToImport.length} таблиц!` });
+      setTimeout(() => { setImportStatus(null); setImportProgress(null); }, 5000);
+    } catch (e) {
+      setImportStatus({ type: "error", msg: e instanceof Error ? e.message : "Ошибка импорта" });
+      setImportProgress(null);
+    } finally {
+      setImportLoading(false);
+    }
+  };
 
   const handleExportDbTables = () => {
     const source = pendingCars ?? carDatabase;
@@ -828,8 +939,8 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                   </div>
                 </UploadBlock>
 
-                {/* Кнопка экспорта таблиц БД */}
-                <div className="mt-2">
+                {/* Кнопки экспорта/импорта таблиц БД */}
+                <div className="mt-2 space-y-2">
                   <button
                     onClick={handleExportDbTables}
                     disabled={exportLoading || (!pendingCars && carDatabase.length === 0)}
@@ -841,6 +952,37 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                   {exportStatus && (
                     <p className={`text-xs px-2 mt-1 ${exportStatus.type === "error" ? "text-red-600" : "text-blue-600"}`}>
                       {exportStatus.msg}
+                    </p>
+                  )}
+                  <input
+                    ref={importFileRef}
+                    type="file"
+                    accept=".csv"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleImportCsvFiles(e.target.files);
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    onClick={() => importFileRef.current?.click()}
+                    disabled={importLoading}
+                    className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-green-800 bg-green-50 border border-green-200 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Icon name={importLoading ? "Loader" : "Upload"} size={14} className={importLoading ? "animate-spin" : ""} />
+                    {importLoading ? "Импортирую…" : "Загрузить CSV таблицы в серверную БД"}
+                  </button>
+                  {importProgress !== null && (
+                    <div className="h-2 bg-green-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 rounded-full" style={{ width: `${importProgress}%`, transition: "width 0.3s ease" }} />
+                    </div>
+                  )}
+                  {importStatus && (
+                    <p className={`text-xs px-2 ${importStatus.type === "error" ? "text-red-600" : "text-green-600"}`}>
+                      {importStatus.msg}
                     </p>
                   )}
                 </div>
