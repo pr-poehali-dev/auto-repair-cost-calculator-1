@@ -436,10 +436,11 @@ const TabDatabase = () => {
               <Icon name="Loader" size={13} />Загрузка базы из сервера…
             </div>
           )}
-          {carDbCount > 0 && uploadProgress === null && (
+          {(carDbCount > 0 || carsStatus?.type === "success") && uploadProgress === null && (
             <div className="mb-3 flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
               <span className="flex items-center gap-2">
-                <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
+                <Icon name="CheckCircle" size={13} />
+                {carDbCount > 0 ? `В базе: ${carDbCount.toLocaleString("ru-RU")} модификаций` : "База загружена"}
               </span>
               <button
                 type="button"
