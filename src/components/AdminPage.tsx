@@ -335,26 +335,21 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setExportLoading(true);
     setExportStatus({ type: "success", msg: "Формирую таблицы…" });
     try {
-      const slug = (s: string) => s.toLowerCase().replace(/[\s()/\\]+/g, "-").replace(/^-|-$/g, "");
       const brandsRows: string[][] = [];
       const modelsRows: string[][] = [];
       const gensRows: string[][] = [];
       const modsRows: string[][] = [];
       for (const brand of source) {
-        const bid = brand.id || slug(brand.name);
-        brandsRows.push([bid, brand.name]);
+        brandsRows.push([brand.name]);
         for (const model of brand.models) {
-          const mid = model.id || `${bid}__${slug(model.name)}`;
-          modelsRows.push([mid, bid, model.name]);
+          modelsRows.push([brand.name, model.name]);
           for (const gen of model.generations) {
-            const gid = gen.id || `${mid}__${slug(gen.name)}`;
-            gensRows.push([gid, mid, gen.name, gen.years || ""]);
+            gensRows.push([model.name, gen.name, gen.years || ""]);
             for (const mod of gen.modifications) {
               const m = mod as Record<string, unknown>;
               const v = (k: string) => String(m[k] ?? "");
-              const modid = mod.id || `${gid}__${slug(mod.name)}`;
               modsRows.push([
-                modid, gid, mod.name, v("engine"), v("transmission"), v("power"),
+                gen.name, mod.name, v("engine"), v("transmission"), v("power"),
                 v("bodyType"), v("seats"), v("lengthMm"), v("widthMm"), v("heightMm"), v("wheelbaseMm"),
                 v("trackFrontMm"), v("trackRearMm"), v("curbWeightKg"), v("wheelSize"), v("groundClearanceMm"),
                 v("trunkMaxL"), v("trunkMinL"), v("grossWeightKg"), v("diskSize"), v("clearanceMm"),
@@ -394,7 +389,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         URL.revokeObjectURL(url);
       };
       const modsHeaders = [
-        "id", "generation_id", "name", "engine", "transmission", "power",
+        "generation", "name", "engine", "transmission", "power",
         "body_type", "seats", "length_mm", "width_mm", "height_mm", "wheelbase_mm",
         "track_front_mm", "track_rear_mm", "curb_weight_kg", "wheel_size", "ground_clearance_mm",
         "trunk_max_l", "trunk_min_l", "gross_weight_kg", "disk_size", "clearance_mm",
@@ -415,9 +410,9 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         "charge_connector_type", "consumption_kwh_per_100km", "max_charge_power_kw",
         "battery_available_kwh", "charge_cycles",
       ];
-      saveCsv("car_brands", ["id", "name"], brandsRows);
-      setTimeout(() => saveCsv("car_models", ["id", "brand_id", "name"], modelsRows), 300);
-      setTimeout(() => saveCsv("car_generations", ["id", "model_id", "name", "years"], gensRows), 600);
+      saveCsv("car_brands", ["name"], brandsRows);
+      setTimeout(() => saveCsv("car_models", ["brand", "name"], modelsRows), 300);
+      setTimeout(() => saveCsv("car_generations", ["model", "name", "years"], gensRows), 600);
       setTimeout(() => saveCsv("car_modifications", modsHeaders, modsRows), 900);
       setExportStatus({ type: "success", msg: `Готово! 4 CSV файла: ${brandsRows.length} марок, ${modsRows.length} модификаций` });
       setTimeout(() => setExportStatus(null), 4000);
