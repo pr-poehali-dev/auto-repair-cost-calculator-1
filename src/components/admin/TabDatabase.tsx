@@ -147,13 +147,10 @@ const TabDatabase = () => {
         allData[t] = allRows;
       }
       setExportStatus({ type: "success", msg: "Формирую Excel…" });
-      const wb = XLSX.utils.book_new();
-      for (const [name, rows] of Object.entries(allData)) {
-        if (rows.length === 0) {
-          const ws = XLSX.utils.aoa_to_sheet([["Таблица пуста"]]);
-          XLSX.utils.book_append_sheet(wb, ws, name);
-          continue;
-        }
+      const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+      const makeSheet = (name: string, rows: Record<string, unknown>[]) => {
+        if (rows.length === 0) return XLSX.utils.aoa_to_sheet([["Таблица пуста"]]);
         const headers = Object.keys(rows[0]);
         const data = rows.map(r => headers.map(h => {
           const v = r[h];
@@ -163,11 +160,83 @@ const TabDatabase = () => {
         }));
         const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
         ws["!cols"] = headers.map(() => ({ wch: 20 }));
-        XLSX.utils.book_append_sheet(wb, ws, name);
+        return ws;
+      };
+
+      const tableEntries = Object.entries(allData);
+      let fileIndex = 1;
+      let currentWb = XLSX.utils.book_new();
+      let currentTables: string[] = [];
+
+      const saveFile = (wb: XLSX.WorkBook, idx: number) => {
+        const suffix = idx === 1 ? "" : ` ${idx}`;
+        XLSX.writeFile(wb, `экспорт_базы_данных${suffix}.xlsx`);
+      };
+
+      for (const [name, rows] of tableEntries) {
+        const ws = makeSheet(name, rows);
+        XLSX.utils.book_append_sheet(currentWb, ws, name);
+        currentTables.push(name);
+
+        const buf = XLSX.write(currentWb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+        if (buf.byteLength > MAX_FILE_BYTES && currentTables.length > 1) {
+          const prevWb = XLSX.utils.book_new();
+          for (const prevName of currentTables.slice(0, -1)) {
+            XLSX.utils.book_append_sheet(prevWb, makeSheet(prevName, allData[prevName]), prevName);
+          }
+          setExportStatus({ type: "success", msg: `Сохраняю файл ${fileIndex}…` });
+          saveFile(prevWb, fileIndex);
+          fileIndex++;
+
+          currentWb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(currentWb, ws, name);
+          currentTables = [name];
+
+          const singleBuf = XLSX.write(currentWb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+          if (singleBuf.byteLength > MAX_FILE_BYTES && rows.length > 100) {
+            const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+            const avgRowSize = singleBuf.byteLength / rows.length;
+            const rowsPerFile = Math.max(100, Math.floor((MAX_FILE_BYTES * 0.9) / avgRowSize));
+
+            currentWb = XLSX.utils.book_new();
+            currentTables = [];
+            for (let i = 0; i < rows.length; i += rowsPerFile) {
+              const chunk = rows.slice(i, i + rowsPerFile);
+              const partWb = XLSX.utils.book_new();
+              const partWs = makeSheet(name, chunk);
+              XLSX.utils.book_append_sheet(partWb, partWs, name);
+              setExportStatus({ type: "success", msg: `Сохраняю файл ${fileIndex} (${name}: строки ${i + 1}–${Math.min(i + rowsPerFile, rows.length)})…` });
+              saveFile(partWb, fileIndex);
+              fileIndex++;
+            }
+          }
+        }
       }
-      XLSX.writeFile(wb, "экспорт_базы_данных.xlsx");
-      setExportStatus({ type: "success", msg: "Файл скачан!" });
-      setTimeout(() => setExportStatus(null), 3000);
+
+      if (currentTables.length > 0) {
+        const finalBuf = XLSX.write(currentWb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+        if (finalBuf.byteLength > MAX_FILE_BYTES && currentTables.length === 1 && allData[currentTables[0]].length > 100) {
+          const tName = currentTables[0];
+          const tRows = allData[tName];
+          const avgRowSize = finalBuf.byteLength / tRows.length;
+          const rowsPerFile = Math.max(100, Math.floor((MAX_FILE_BYTES * 0.9) / avgRowSize));
+          for (let i = 0; i < tRows.length; i += rowsPerFile) {
+            const chunk = tRows.slice(i, i + rowsPerFile);
+            const partWb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(partWb, makeSheet(tName, chunk), tName);
+            setExportStatus({ type: "success", msg: `Сохраняю файл ${fileIndex} (${tName}: строки ${i + 1}–${Math.min(i + rowsPerFile, tRows.length)})…` });
+            saveFile(partWb, fileIndex);
+            fileIndex++;
+          }
+        } else {
+          saveFile(currentWb, fileIndex);
+          fileIndex++;
+        }
+      }
+
+      const totalFiles = fileIndex - 1;
+      setExportStatus({ type: "success", msg: totalFiles > 1 ? `Скачано ${totalFiles} файлов!` : "Файл скачан!" });
+      setTimeout(() => setExportStatus(null), 4000);
     } catch (e) {
       setExportStatus({ type: "error", msg: e instanceof Error ? e.message : "Ошибка экспорта" });
     } finally {
