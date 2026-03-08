@@ -339,17 +339,23 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
       const modelsRows: string[][] = [];
       const gensRows: string[][] = [];
       const modsRows: string[][] = [];
+      const slug = (s: string) => s.toLowerCase().replace(/[\s()/\\]+/g, "-").replace(/^-|-$/g, "");
+      const makeId = (...parts: string[]) => parts.filter(Boolean).map(slug).join("__");
       for (const brand of source) {
-        brandsRows.push([brand.name]);
+        const brandId = slug(brand.name);
+        brandsRows.push([brandId, brand.name]);
         for (const model of brand.models) {
-          modelsRows.push([brand.name, model.name]);
+          const modelId = makeId(brandId, model.name);
+          modelsRows.push([modelId, brandId, model.name]);
           for (const gen of model.generations) {
-            gensRows.push([model.name, gen.name, gen.years || ""]);
+            const genId = makeId(modelId, gen.name || "default");
+            gensRows.push([genId, modelId, gen.name, gen.years || ""]);
             for (const mod of gen.modifications) {
+              const modId = makeId(genId, mod.name);
               const m = mod as Record<string, unknown>;
               const v = (k: string) => String(m[k] ?? "");
               modsRows.push([
-                gen.name, mod.name, v("engine"), v("transmission"), v("power"),
+                modId, genId, mod.name, v("engine"), v("transmission"), v("power"),
                 v("bodyType"), v("seats"), v("lengthMm"), v("widthMm"), v("heightMm"), v("wheelbaseMm"),
                 v("trackFrontMm"), v("trackRearMm"), v("curbWeightKg"), v("wheelSize"), v("groundClearanceMm"),
                 v("trunkMaxL"), v("trunkMinL"), v("grossWeightKg"), v("diskSize"), v("clearanceMm"),
@@ -410,7 +416,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         return partNum - 1;
       };
       const modsHeaders = [
-        "generation", "name", "engine", "transmission", "power",
+        "id", "generation_id", "name", "engine", "transmission", "power",
         "body_type", "seats", "length_mm", "width_mm", "height_mm", "wheelbase_mm",
         "track_front_mm", "track_rear_mm", "curb_weight_kg", "wheel_size", "ground_clearance_mm",
         "trunk_max_l", "trunk_min_l", "gross_weight_kg", "disk_size", "clearance_mm",
@@ -432,11 +438,11 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         "battery_available_kwh", "charge_cycles",
       ];
       let totalFiles = 0;
-      totalFiles += saveCsvSplit("car_brands", ["name"], brandsRows);
+      totalFiles += saveCsvSplit("car_brands", ["id", "name"], brandsRows);
       setTimeout(() => {
-        totalFiles += saveCsvSplit("car_models", ["brand", "name"], modelsRows);
+        totalFiles += saveCsvSplit("car_models", ["id", "brand_id", "name"], modelsRows);
         setTimeout(() => {
-          totalFiles += saveCsvSplit("car_generations", ["model", "name", "years"], gensRows);
+          totalFiles += saveCsvSplit("car_generations", ["id", "model_id", "name", "years"], gensRows);
           setTimeout(() => {
             const modsParts = saveCsvSplit("car_modifications", modsHeaders, modsRows);
             totalFiles += modsParts;
