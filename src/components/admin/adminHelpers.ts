@@ -1,4 +1,6 @@
 import * as XLSX from "xlsx";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 import { CarBrand, Work } from "@/data/carDatabase";
 import { WorkEntry } from "@/pages/Index";
 
@@ -102,7 +104,7 @@ export function filterAndDownloadOldCars(file: File, onDone: (removed: number, t
   reader.readAsArrayBuffer(file);
 }
 
-export function downloadCarsAsDbFormat(cars: CarBrand[]) {
+export async function downloadCarsAsDbFormat(cars: CarBrand[]) {
   const rows: string[][] = [];
   for (const brand of cars) {
     for (const model of brand.models) {
@@ -143,11 +145,45 @@ export function downloadCarsAsDbFormat(cars: CarBrand[]) {
       }
     }
   }
-  const ws = XLSX.utils.aoa_to_sheet([CAR_COLUMNS, ...rows]);
-  ws["!cols"] = CAR_COLUMNS.map(() => ({ wch: 18 }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "База авто");
-  XLSX.writeFile(wb, "база_авто_экспорт.xlsx");
+
+  const ROW_LIMIT = 5000;
+  const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+  if (rows.length <= ROW_LIMIT) {
+    const ws = XLSX.utils.aoa_to_sheet([CAR_COLUMNS, ...rows]);
+    ws["!cols"] = CAR_COLUMNS.map(() => ({ wch: 18 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "База авто");
+    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    if (buf.byteLength <= MAX_FILE_BYTES) {
+      XLSX.writeFile(wb, "база_авто_экспорт.xlsx");
+      return;
+    }
+  }
+
+  const sampleRows = rows.slice(0, Math.min(200, rows.length));
+  const sampleWs = XLSX.utils.aoa_to_sheet([CAR_COLUMNS, ...sampleRows]);
+  const sampleWb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(sampleWb, sampleWs, "База авто");
+  const sampleBuf = XLSX.write(sampleWb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  const bytesPerRow = sampleBuf.byteLength / sampleRows.length;
+  const rowsPerFile = Math.max(100, Math.floor((MAX_FILE_BYTES * 0.9) / bytesPerRow));
+
+  const zip = new JSZip();
+  let partNum = 1;
+  for (let i = 0; i < rows.length; i += rowsPerFile) {
+    const chunk = rows.slice(i, i + rowsPerFile);
+    const ws = XLSX.utils.aoa_to_sheet([CAR_COLUMNS, ...chunk]);
+    ws["!cols"] = CAR_COLUMNS.map(() => ({ wch: 18 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "База авто");
+    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+    zip.file(`база_авто_экспорт_${partNum}.xlsx`, buf);
+    partNum++;
+  }
+
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  saveAs(zipBlob, "база_авто_экспорт.zip");
 }
 
 export function downloadWorksTemplate() {
