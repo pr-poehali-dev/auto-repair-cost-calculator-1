@@ -245,19 +245,34 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
 
     let savedMods = 0;
     const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const MAX_RETRIES = 3;
     try {
       for (let i = 0; i < chunks.length; i++) {
-        if (i > 0) await delay(150);
+        if (i > 0) await delay(500);
         setReloadStatus({ type: "success", msg: `Сохраняю на сервер… ${i + 1}/${chunks.length} (${chunks[i][0]?.name ?? ""})` });
-        const res = await fetch(FUNC_SAVE_CARS_TREE, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brands: chunks[i], chunk: i, total_chunks: chunks.length, mode: i === 0 ? "replace" : "merge" }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status} на марке ${chunks[i][0]?.name ?? i}`);
-        const d = await res.json();
-        const parsed = typeof d === "string" ? JSON.parse(d) : d;
-        savedMods += parsed.modifications ?? 0;
+        let lastErr: Error | null = null;
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          try {
+            const res = await fetch(FUNC_SAVE_CARS_TREE, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ brands: chunks[i], chunk: i, total_chunks: chunks.length, mode: i === 0 ? "replace" : "merge" }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const d = await res.json();
+            const parsed = typeof d === "string" ? JSON.parse(d) : d;
+            savedMods += parsed.modifications ?? 0;
+            lastErr = null;
+            break;
+          } catch (e) {
+            lastErr = e instanceof Error ? e : new Error(String(e));
+            if (attempt < MAX_RETRIES - 1) {
+              await delay(2000 * (attempt + 1));
+              setReloadStatus({ type: "success", msg: `Повтор ${attempt + 2}/${MAX_RETRIES} для ${chunks[i][0]?.name ?? ""}…` });
+            }
+          }
+        }
+        if (lastErr) throw new Error(`${lastErr.message} на марке ${chunks[i][0]?.name ?? i}`);
       }
       setCarDatabase(source);
       setDbReady(true);
