@@ -379,16 +379,16 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
           }
         }
       }
-      const wb = XLSX.utils.book_new();
-      const addSheet = (name: string, headers: string[], rows: string[][]) => {
+      const saveCsv = (name: string, headers: string[], rows: string[][]) => {
         const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-        ws["!cols"] = headers.map(() => ({ wch: 20 }));
-        XLSX.utils.book_append_sheet(wb, ws, name);
+        const csv = XLSX.utils.sheet_to_csv(ws);
+        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = `${name}.csv`; a.click();
+        URL.revokeObjectURL(url);
       };
-      addSheet("car_brands", ["id", "name"], brandsRows);
-      addSheet("car_models", ["id", "brand_id", "name"], modelsRows);
-      addSheet("car_generations", ["id", "model_id", "name", "years"], gensRows);
-      addSheet("car_modifications", [
+      const modsHeaders = [
         "id", "generation_id", "name", "engine", "transmission", "power",
         "body_type", "seats", "length_mm", "width_mm", "height_mm", "wheelbase_mm",
         "track_front_mm", "track_rear_mm", "curb_weight_kg", "wheel_size", "ground_clearance_mm",
@@ -409,9 +409,12 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         "battery_temp_range_c", "fast_charge_time_h", "fast_charge_desc",
         "charge_connector_type", "consumption_kwh_per_100km", "max_charge_power_kw",
         "battery_available_kwh", "charge_cycles",
-      ], modsRows);
-      XLSX.writeFile(wb, "таблицы_базы_данных.xlsx");
-      setExportStatus({ type: "success", msg: `Готово! ${brandsRows.length} марок, ${modsRows.length} модификаций` });
+      ];
+      saveCsv("car_brands", ["id", "name"], brandsRows);
+      setTimeout(() => saveCsv("car_models", ["id", "brand_id", "name"], modelsRows), 300);
+      setTimeout(() => saveCsv("car_generations", ["id", "model_id", "name", "years"], gensRows), 600);
+      setTimeout(() => saveCsv("car_modifications", modsHeaders, modsRows), 900);
+      setExportStatus({ type: "success", msg: `Готово! 4 CSV файла: ${brandsRows.length} марок, ${modsRows.length} модификаций` });
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e) {
       setExportStatus({ type: "error", msg: e instanceof Error ? e.message : "Ошибка экспорта" });
