@@ -88,7 +88,7 @@ const TabDatabase = () => {
         return;
       }
 
-      const CHUNK_SIZE = 500;
+      const CHUNK_SIZE = 100;
       const chunks: unknown[][][] = [];
       for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
         chunks.push(dataRows.slice(i, i + CHUNK_SIZE));
@@ -113,6 +113,8 @@ const TabDatabase = () => {
         totalInserted += parsed.inserted ?? 0;
         totalSkipped += parsed.skipped ?? 0;
         setUploadProgress(10 + Math.round(((ci + 1) / chunks.length) * 80));
+        // Пауза между чанками чтобы не перегружать БД
+        if (ci < chunks.length - 1) await new Promise((r) => setTimeout(r, 300));
       }
 
       setUploadProgress(95);
