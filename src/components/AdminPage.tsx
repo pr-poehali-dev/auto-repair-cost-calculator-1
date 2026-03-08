@@ -10,6 +10,7 @@ import TabUsers from "@/components/admin/TabUsers";
 import TabEditor from "@/components/admin/TabEditor";
 import TabLinks from "@/components/admin/TabLinks";
 import TabWorkFilters from "@/components/admin/TabWorkFilters";
+import TabDatabase from "@/components/admin/TabDatabase";
 
 type AdminTab = "dashboard" | "branches" | "users" | "editor" | "links" | "workfilters" | "database";
 
@@ -443,16 +444,11 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
           {activeTab === "workfilters" && <TabWorkFilters />}
 
           {/* ── Базы данных ── */}
-          {activeTab === "database" && (
+          {activeTab === "database" && <TabDatabase />}
+
+          {activeTab === "database_old_stub_disabled" && (
             <div className="space-y-6">
-              {/* Step indicators */}
-              <div className="flex flex-wrap gap-4 items-center">
-                <StepBadge n={1} active={!step1Done} done={step1Done} label="База автомобилей" />
-                <Icon name="ChevronRight" size={16} className="text-muted-foreground hidden sm:block" />
-                <StepBadge n={2} active={step1Done && !step2Done} done={step2Done} label="Список работ" />
-                <Icon name="ChevronRight" size={16} className="text-muted-foreground hidden sm:block" />
-                <StepBadge n={3} active={step2Done && !step3Done} done={step3Done} label="Нормативы" />
-              </div>
+              <div className="flex flex-wrap gap-4 items-center" />
 
               {/* Блок Яндекс.Диска */}
               <div className="border border-blue-200 rounded-lg p-5 bg-blue-50 space-y-3">

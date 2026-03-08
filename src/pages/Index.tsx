@@ -282,14 +282,25 @@ const Index = () => {
     if (url) runAutoSync(url);
   }, [runAutoSync]);
 
+  // При старте — подгружаем полное дерево из backend в контекст
   useEffect(() => {
     reloadCarDb();
+    fetch(FUNC_GET_CARS)
+      .then((r) => r.json())
+      .then((raw) => {
+        const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+        const brands = Array.isArray(data) ? data : data?.brands;
+        if (Array.isArray(brands) && brands.length > 0) {
+          setCarDatabase(brands as CarBrand[]);
+        }
+      })
+      .catch(() => {});
     if (!autoSyncRanRef.current) {
       autoSyncRanRef.current = true;
       const url = loadLS<string>(LS_CARS_URL, "");
       if (url) runAutoSync(url);
     }
-  }, [reloadCarDb, runAutoSync]);
+  }, [reloadCarDb, runAutoSync]);  
   const setBranches = (fn: (prev: Branch[]) => Branch[]) => {
     setBranchesRaw((prev) => {
       const next = fn(prev);
