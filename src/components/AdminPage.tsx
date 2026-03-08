@@ -228,20 +228,33 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     }
     setReloadLoading(true);
     setReloadStatus(null);
-    const total = source.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
-    const CHUNK_SIZE = 5;
-    const totalChunks = Math.ceil(source.length / CHUNK_SIZE);
+
+    const MAX_MODELS_PER_CHUNK = 3;
+    type Chunk = CarBrand[];
+    const chunks: Chunk[] = [];
+
+    for (const brand of source) {
+      const modCount = brand.models.reduce((s, m) => s + m.generations.reduce((s2, g) => s2 + g.modifications.length, 0), 0);
+      if (modCount <= 500) {
+        chunks.push([brand]);
+      } else {
+        for (let j = 0; j < brand.models.length; j += MAX_MODELS_PER_CHUNK) {
+          const slice = brand.models.slice(j, j + MAX_MODELS_PER_CHUNK);
+          chunks.push([{ ...brand, models: slice }]);
+        }
+      }
+    }
+
     let savedMods = 0;
     try {
-      for (let i = 0; i < totalChunks; i++) {
-        const chunk = source.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-        setReloadStatus({ type: "success", msg: `Сохраняю на сервер… чанк ${i + 1}/${totalChunks}` });
+      for (let i = 0; i < chunks.length; i++) {
+        setReloadStatus({ type: "success", msg: `Сохраняю на сервер… ${i + 1}/${chunks.length} (${chunks[i][0]?.name ?? ""})` });
         const res = await fetch(FUNC_SAVE_CARS_TREE, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brands: chunk, chunk: i, total_chunks: totalChunks, mode: i === 0 ? "replace" : "merge" }),
+          body: JSON.stringify({ brands: chunks[i], chunk: i, total_chunks: chunks.length, mode: i === 0 ? "replace" : "merge" }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status} на марке ${chunks[i][0]?.name ?? i}`);
         const d = await res.json();
         const parsed = typeof d === "string" ? JSON.parse(d) : d;
         savedMods += parsed.modifications ?? 0;
@@ -252,7 +265,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     } catch (e) {
       setCarDatabase(source);
       setDbReady(true);
-      setReloadStatus({ type: "error", msg: `Данные применены локально, но ошибка сохранения на сервер: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
+      setReloadStatus({ type: "error", msg: `Сохранено ${savedMods.toLocaleString("ru-RU")} мод., но ошибка: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
     } finally {
       setReloadLoading(false);
     }
