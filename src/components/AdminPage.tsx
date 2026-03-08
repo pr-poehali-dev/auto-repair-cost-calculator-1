@@ -3,6 +3,8 @@ import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { CarBrand, Work } from "@/data/carDatabase";
 import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplateHelper, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_CHUNKS, FUNC_PARSE_YANDEX_FILE } from "@/components/admin/adminHelpers";
+
+const FUNC_SAVE_CARS_TREE = "https://functions.poehali.dev/1e853609-fb61-44ee-b891-395a0182cc16";
 import * as XLSX from "xlsx";
 import TabDashboard from "@/components/admin/TabDashboard";
 import TabBranches from "@/components/admin/TabBranches";
@@ -218,16 +220,42 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [reloadLoading, setReloadLoading] = useState(false);
   const [reloadStatus, setReloadStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const handleReloadDb = () => {
+  const handleReloadDb = async () => {
     const source = pendingCars ?? carDatabase;
     if (!source || source.length === 0) {
       setReloadStatus({ type: "error", msg: "Сначала загрузите Excel-файл с базой автомобилей." });
       return;
     }
-    setCarDatabase(source);
-    setDbReady(true);
+    setReloadLoading(true);
+    setReloadStatus(null);
     const total = source.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
-    setReloadStatus({ type: "success", msg: `База обновлена! ${source.length} марок, ${total.toLocaleString("ru-RU")} модификаций доступны на главной.` });
+    const CHUNK_SIZE = 5;
+    const totalChunks = Math.ceil(source.length / CHUNK_SIZE);
+    let savedMods = 0;
+    try {
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = source.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        setReloadStatus({ type: "success", msg: `Сохраняю на сервер… чанк ${i + 1}/${totalChunks}` });
+        const res = await fetch(FUNC_SAVE_CARS_TREE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brands: chunk, chunk: i, total_chunks: totalChunks, mode: i === 0 ? "replace" : "merge" }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        const parsed = typeof d === "string" ? JSON.parse(d) : d;
+        savedMods += parsed.modifications ?? 0;
+      }
+      setCarDatabase(source);
+      setDbReady(true);
+      setReloadStatus({ type: "success", msg: `База сохранена на сервер! ${source.length} марок, ${savedMods.toLocaleString("ru-RU")} модификаций. Данные доступны всем пользователям.` });
+    } catch (e) {
+      setCarDatabase(source);
+      setDbReady(true);
+      setReloadStatus({ type: "error", msg: `Данные применены локально, но ошибка сохранения на сервер: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
+    } finally {
+      setReloadLoading(false);
+    }
   };
 
   // Rate
@@ -625,11 +653,11 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                   <button
                     type="button"
                     onClick={handleReloadDb}
-                    disabled={!pendingCars && !hasCars}
+                    disabled={reloadLoading || (!pendingCars && !hasCars)}
                     className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Icon name="RefreshCw" size={14} />
-                    Обновить загруженную базу данных
+                    <Icon name={reloadLoading ? "Loader" : "CloudUpload"} size={14} className={reloadLoading ? "animate-spin" : ""} fallback="RefreshCw" />
+                    {reloadLoading ? "Сохраняю на сервер…" : "Сохранить базу на сервер"}
                   </button>
                   {reloadStatus && (
                     <div className={`mt-2 flex items-center gap-2 p-2.5 rounded border text-xs ${reloadStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>

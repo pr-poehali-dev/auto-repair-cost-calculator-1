@@ -353,6 +353,16 @@ const Index = () => {
           }
         })
         .catch(() => {});
+      fetch(FUNC_GET_CARS)
+        .then((r) => r.json())
+        .then((raw) => {
+          const tree = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (Array.isArray(tree) && tree.length > 0) {
+            setCarDatabaseRaw(tree);
+            saveLS(LS_CARS, tree);
+          }
+        })
+        .catch(() => {});
     }
   }, [reloadCarDb, runAutoSync]);
   const setBranches = (fn: (prev: Branch[]) => Branch[]) => {
