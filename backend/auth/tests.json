@@ -1,0 +1,50 @@
+{
+  "tests": [
+    {
+      "name": "Test user registration - buyer",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "register",
+        "email": "buyer@test.com",
+        "password": "Test123!@#",
+        "confirm_password": "Test123!@#",
+        "user_type": "buyer",
+        "first_name": "Иван",
+        "last_name": "Покупателев",
+        "phone": "+7999123456",
+        "company_name": "ООО Тест",
+        "business_type": "retail"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "message": "string",
+        "token": "string",
+        "user": {
+          "email": "string",
+          "user_type": "string"
+        }
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test user login",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "login",
+        "email": "buyer@test.com",
+        "password": "Test123!@#"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "message": "string",
+        "token": "string",
+        "user": {
+          "email": "string"
+        }
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

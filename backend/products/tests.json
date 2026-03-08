@@ -1,0 +1,61 @@
+{
+  "tests": [
+    {
+      "name": "Test product listing",
+      "method": "GET",
+      "path": "/",
+      "headers": {
+        "X-Supplier-ID": "1"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "products": "array",
+        "pagination": {
+          "page": "number",
+          "limit": "number",
+          "total_count": "number",
+          "total_pages": "number"
+        }
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test create product",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-Supplier-ID": "1",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "name": "Test Product",
+        "description": "Test product description",
+        "category_id": 1,
+        "price": 99.99,
+        "stock_quantity": 10,
+        "status": "draft"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "id": "number",
+        "name": "Test Product",
+        "price": "string",
+        "status": "draft"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test products listing without supplier header",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "products": "array",
+        "pagination": {
+          "total_count": "number"
+        }
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

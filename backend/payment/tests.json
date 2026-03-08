@@ -1,0 +1,42 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS - CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "POST - Create payment with valid data",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "planName": "Профессиональный",
+        "amount": 15000,
+        "period": "monthly",
+        "email": "test@example.com"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "paymentUrl": "string",
+        "invoiceId": "string",
+        "amount": 15000,
+        "description": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST - Missing required fields",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "period": "monthly"
+      },
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

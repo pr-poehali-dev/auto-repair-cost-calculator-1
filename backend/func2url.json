@@ -1,4 +1,9 @@
 {
+  "payment": "https://functions.poehali.dev/2360b140-f236-4b81-b45c-438511136f74",
+  "auth": "https://functions.poehali.dev/f01d2f6a-0e62-4af6-bf53-8a20770e7f5f",
+  "trial-notifications": "https://functions.poehali.dev/8d0897b5-cb33-4d4b-ac60-25fe3aec7ac4",
+  "categories": "https://functions.poehali.dev/365e4d30-87f9-4257-b4bd-73b8aeddb6a7",
+  "products": "https://functions.poehali.dev/8fe94932-6461-4079-8c58-055f2d89a939",
   "export-db-tables": "https://functions.poehali.dev/bb2bb98a-1efe-4710-b390-0b2b9cb7402c",
   "save-cars-tree": "https://functions.poehali.dev/1e853609-fb61-44ee-b891-395a0182cc16",
   "import-cars-cdn": "https://functions.poehali.dev/3a8905fe-fdf4-4d40-b2e7-25ea29c953fe",

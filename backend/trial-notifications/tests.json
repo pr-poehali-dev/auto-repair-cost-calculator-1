@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "Check trial statistics",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "statistics": "object",
+        "message": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Send trial notifications",
+      "method": "POST", 
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "message": "string",
+        "total_suppliers": "number"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

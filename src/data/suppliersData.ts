@@ -1,0 +1,137 @@
+export const suppliersData = [
+  {
+    id: 1,
+    name: "ООО «Металл-Трейд»",
+    inn: "7701234567",
+    ogrn: "1027700123456",
+    logo: "/img/1896fbdf-f98d-49a3-9193-25c98958adcf.jpg",
+    category: "Металлопрокат",
+    region: "Москва",
+    verified: true,
+
+
+    products: 350,
+    experience: 12,
+    foundedYear: 2012,
+    description: "Крупнейший поставщик металлопроката в России. Широкий ассортимент стальных труб, листового металла и арматуры.",
+    specializations: ["Трубы стальные", "Листовой металл", "Арматура"],
+    minOrder: 500000,
+    phone: "+7 (495) 123-45-67",
+    email: "info@metall-trade.ru",
+    website: "www.metall-trade.ru",
+    address: "Москва, ул. Промышленная, 15",
+    warehouse: "3 склада в МО",
+    employeesCount: 85,
+    monthlyOrders: 340,
+    certifications: ["ISO 9001", "ISO 14001", "ГОСТ Р"],
+    paymentMethods: ["Безналичный", "Аккредитив", "Факторинг"],
+    deliveryRegions: ["Москва", "МО", "Центральный ФО"],
+    workingHours: "Пн-Пт: 9:00-18:00",
+    benefits: ["Скидки постоянным клиентам", "Бесплатная доставка от 1 млн", "Отсрочка до 30 дней"],
+    recentNews: [
+      { date: "2024-08-15", title: "Запуск нового склада в Подольске", type: "expansion" },
+      { date: "2024-07-20", title: "Получен сертификат ISO 14001", type: "certification" }
+    ]
+  },
+  {
+    id: 2,
+    name: "АО «СтройБаза Регион»",
+    inn: "7812345678",
+    ogrn: "1027812345678",
+    logo: "/img/d166a943-2618-4918-b162-2f653f5ae829.jpg",
+    category: "Стройматериалы",
+    region: "Санкт-Петербург",
+    verified: true,
+
+    reviewsCount: 203,
+    products: 520,
+    experience: 8,
+    foundedYear: 2016,
+    description: "Надежный партнер в области строительных материалов. Цемент, бетон, кирпич и другие материалы высокого качества.",
+    specializations: ["Цемент", "Бетонные смеси", "Кирпич"],
+    minOrder: 200000,
+    phone: "+7 (812) 987-65-43",
+    email: "orders@stroybaza.ru",
+    website: "www.stroybaza.ru",
+    address: "СПб, Индустриальный пр., 25",
+    warehouse: "2 склада в СПб",
+    employeesCount: 45,
+    monthlyOrders: 180,
+    certifications: ["ГОСТ Р", "СТО"],
+    paymentMethods: ["Безналичный", "НДС зачет"],
+    deliveryRegions: ["СПб", "ЛО", "СЗФО"],
+    workingHours: "Пн-Пт: 8:00-17:00",
+    benefits: ["Прямые поставки с заводов", "Техническая поддержка", "Проектные расчеты"],
+    recentNews: [
+      { date: "2024-08-01", title: "Новые поставки кирпича от ЛСР", type: "product" },
+      { date: "2024-07-10", title: "Расширение географии доставки", type: "logistics" }
+    ]
+  },
+  {
+    id: 3,
+    name: "ИП Электроника-Опт",
+    inn: "5423456789",
+    ogrn: "",
+    logo: "/img/eb347072-5079-42a8-9320-9ff8ccc544f5.jpg",
+    category: "Электроника",
+    region: "Новосибирск",
+    verified: false,
+
+
+    products: 180,
+    experience: 5,
+    foundedYear: 2019,
+    description: "Оптовые поставки электронных компонентов и радиодеталей. Микроконтроллеры, платы, датчики.",
+    specializations: ["Arduino", "Raspberry Pi", "Датчики"],
+    minOrder: 50000,
+    phone: "+7 (383) 555-12-34",
+    email: "sales@electronika-opt.ru",
+    website: "www.electronika-opt.ru",
+    address: "Новосибирск, ул. Электронная, 7",
+    warehouse: "1 склад",
+    employeesCount: 8,
+    monthlyOrders: 120,
+    certifications: ["РСТ"],
+    paymentMethods: ["Безналичный", "Предоплата"],
+    deliveryRegions: ["Новосибирск", "Сибирский ФО"],
+    workingHours: "Пн-Пт: 10:00-19:00",
+    benefits: ["Быстрая отгрузка", "Техподдержка", "Индивидуальные решения"],
+    recentNews: [
+      { date: "2024-07-25", title: "Новая линейка Arduino модулей", type: "product" }
+    ]
+  },
+  {
+    id: 4,
+    name: "ООО «Кровля-Проф»",
+    inn: "6634567890",
+    ogrn: "1026634567890",
+    logo: "/img/764d08a6-7946-4b1d-9c27-48e192211cc0.jpg",
+    category: "Стройматериалы",
+    region: "Екатеринбург",
+    verified: true,
+
+
+    products: 280,
+    experience: 15,
+    foundedYear: 2009,
+    description: "Специализация на кровельных материалах и системах. Профнастил, металлочерепица, водосточные системы.",
+    specializations: ["Профнастил", "Металлочерепица", "Водостоки"],
+    minOrder: 300000,
+    phone: "+7 (343) 222-33-44",
+    email: "info@krovlya-prof.ru",
+    website: "www.krovlya-prof.ru",
+    address: "Екатеринбург, ул. Кровельная, 42",
+    warehouse: "1 основной склад",
+    employeesCount: 32,
+    monthlyOrders: 95,
+    certifications: ["ГОСТ Р", "ISO 9001"],
+    paymentMethods: ["Безналичный", "Рассрочка"],
+    deliveryRegions: ["Екатеринбург", "Свердловская обл.", "УрФО"],
+    workingHours: "Пн-Пт: 8:00-17:00, Сб: 9:00-15:00",
+    benefits: ["Собственное производство", "Гарантия 10 лет", "Монтажные работы"],
+    recentNews: [
+      { date: "2024-08-10", title: "Новая линия металлочерепицы", type: "product" },
+      { date: "2024-06-15", title: "Открытие представительства в Тюмени", type: "expansion" }
+    ]
+  }
+];

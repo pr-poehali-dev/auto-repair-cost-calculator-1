@@ -199,8 +199,8 @@ const TabDatabase = () => {
         return;
       }
 
-      // 2. Нарезаем на чанки по 500 строк
-      const CHUNK_SIZE = 500;
+      // 2. Нарезаем на чанки по 150 строк (чтобы не превышать лимит тела запроса)
+      const CHUNK_SIZE = 150;
       const chunks: unknown[][][] = [];
       for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
         chunks.push(dataRows.slice(i, i + CHUNK_SIZE));

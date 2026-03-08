@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "Test categories listing",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "categories": "array",
+        "total_count": "number"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test categories with product counts",
+      "method": "GET",
+      "path": "/?include_counts=true",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "categories": "array",
+        "total_count": "number"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
