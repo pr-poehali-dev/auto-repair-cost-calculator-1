@@ -374,19 +374,40 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
           }
         }
       }
-      const saveCsv = (name: string, headers: string[], rows: string[][]) => {
-        const esc = (v: string) => {
-          if (v.includes(";") || v.includes('"') || v.includes("\n")) return '"' + v.replace(/"/g, '""') + '"';
-          return v;
-        };
+      const MAX_CSV_BYTES = 5 * 1024 * 1024;
+      const esc = (v: string) => {
+        if (v.includes(";") || v.includes('"') || v.includes("\n")) return '"' + v.replace(/"/g, '""') + '"';
+        return v;
+      };
+      const buildCsv = (headers: string[], rows: string[][]) => {
         const lines = [headers.map(esc).join(";")];
         for (const row of rows) lines.push(row.map(esc).join(";"));
-        const csv = lines.join("\n");
-        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+        return "\uFEFF" + lines.join("\n");
+      };
+      const downloadBlob = (name: string, content: string) => {
+        const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url; a.download = `${name}.csv`; a.click();
+        a.href = url; a.download = name; a.click();
         URL.revokeObjectURL(url);
+      };
+      const saveCsvSplit = (name: string, headers: string[], rows: string[][]) => {
+        const fullCsv = buildCsv(headers, rows);
+        const fullSize = new Blob([fullCsv]).size;
+        if (fullSize <= MAX_CSV_BYTES) {
+          downloadBlob(`${name}.csv`, fullCsv);
+          return 1;
+        }
+        const avgRowSize = fullSize / rows.length;
+        const rowsPerFile = Math.max(10, Math.floor(MAX_CSV_BYTES / avgRowSize));
+        let partNum = 1;
+        for (let i = 0; i < rows.length; i += rowsPerFile) {
+          const chunk = rows.slice(i, i + rowsPerFile);
+          const csv = buildCsv(headers, chunk);
+          downloadBlob(`${name}_${partNum}.csv`, csv);
+          partNum++;
+        }
+        return partNum - 1;
       };
       const modsHeaders = [
         "generation", "name", "engine", "transmission", "power",
@@ -410,12 +431,20 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
         "charge_connector_type", "consumption_kwh_per_100km", "max_charge_power_kw",
         "battery_available_kwh", "charge_cycles",
       ];
-      saveCsv("car_brands", ["name"], brandsRows);
-      setTimeout(() => saveCsv("car_models", ["brand", "name"], modelsRows), 300);
-      setTimeout(() => saveCsv("car_generations", ["model", "name", "years"], gensRows), 600);
-      setTimeout(() => saveCsv("car_modifications", modsHeaders, modsRows), 900);
-      setExportStatus({ type: "success", msg: `Готово! 4 CSV файла: ${brandsRows.length} марок, ${modsRows.length} модификаций` });
-      setTimeout(() => setExportStatus(null), 4000);
+      let totalFiles = 0;
+      totalFiles += saveCsvSplit("car_brands", ["name"], brandsRows);
+      setTimeout(() => {
+        totalFiles += saveCsvSplit("car_models", ["brand", "name"], modelsRows);
+        setTimeout(() => {
+          totalFiles += saveCsvSplit("car_generations", ["model", "name", "years"], gensRows);
+          setTimeout(() => {
+            const modsParts = saveCsvSplit("car_modifications", modsHeaders, modsRows);
+            totalFiles += modsParts;
+            setExportStatus({ type: "success", msg: `Готово! ${totalFiles} CSV файлов: ${brandsRows.length} марок, ${modsRows.length} модификаций` });
+            setTimeout(() => setExportStatus(null), 4000);
+          }, 500);
+        }, 500);
+      }, 500);
     } catch (e) {
       setExportStatus({ type: "error", msg: e instanceof Error ? e.message : "Ошибка экспорта" });
     } finally {
