@@ -6,7 +6,7 @@ import { UploadBlock, StepBadge } from "@/components/admin/AdminUploadBlocks";
 import type { AutoSyncStatus } from "@/pages/Index";
 import {
   FUNC_UPLOAD_CARS_CHUNK, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_FILE, CAR_COLUMNS,
-  downloadCarsTemplate, downloadWorksTemplate,
+  downloadCarsTemplate, downloadWorksTemplate, downloadCarsAsDbFormat,
   mergeWorks, parseWorksList, generateNormsTemplate, parseFilledTemplate,
   filterAndDownloadOldCars,
 } from "@/components/admin/adminHelpers";
@@ -457,8 +457,18 @@ const TabDatabase = () => {
             </div>
           )}
           {carDbCount > 0 && uploadProgress === null && (
-            <div className="mb-3 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-              <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
+            <div className="mb-3 flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+              <span className="flex items-center gap-2">
+                <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
+              </span>
+              {carDatabase.length > 0 && (
+                <button
+                  onClick={() => downloadCarsAsDbFormat(carDatabase)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-800 bg-green-100 hover:bg-green-200 rounded transition-colors"
+                >
+                  <Icon name="Download" size={12} />Скачать Excel
+                </button>
+              )}
             </div>
           )}
           <div className="overflow-x-auto rounded border border-border mb-4">

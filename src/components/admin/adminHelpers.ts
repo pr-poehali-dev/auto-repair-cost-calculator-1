@@ -102,6 +102,54 @@ export function filterAndDownloadOldCars(file: File, onDone: (removed: number, t
   reader.readAsArrayBuffer(file);
 }
 
+export function downloadCarsAsDbFormat(cars: CarBrand[]) {
+  const rows: string[][] = [];
+  for (const brand of cars) {
+    for (const model of brand.models) {
+      for (const gen of model.generations) {
+        const yearParts = (gen.years || "").split(/\s*[—–-]\s*/);
+        const yearFrom = yearParts[0] || "";
+        const yearTo = yearParts[1] || "";
+        for (const mod of gen.modifications) {
+          const m = mod as Record<string, unknown>;
+          const v = (key: string) => String(m[key] ?? "");
+          rows.push([
+            brand.name, model.name, gen.name, yearFrom, yearTo,
+            v("series"), mod.name,
+            v("bodyType"), v("seats"), v("lengthMm"), v("widthMm"), v("heightMm"), v("wheelbaseMm"),
+            v("trackFrontMm"), v("trackRearMm"), v("curbWeightKg"), v("wheelSize"), v("groundClearanceMm"),
+            v("trunkMaxL"), v("trunkMinL"), v("grossWeightKg"), v("diskSize"),
+            v("clearanceMm"), v("trackFrontWidthMm"), v("trackRearWidthMm"), v("payloadKg"),
+            v("trainWeightKg"), v("axleLoadKg"), v("loadingHeightMm"),
+            v("cargoCompartmentDims"), v("cargoVolumeM3"), v("boltPattern"),
+            v("engineType"), v("engineVolumeCC"), v("power"), v("powerRpm"),
+            v("torqueNm"), v("intakeType"), v("cylinderLayout"), v("cylinderCount"),
+            v("compressionRatio"), v("valvesPerCylinder"), v("turboType"), v("boreMm"), v("strokeMm"),
+            v("engineModel"), v("engineLocation"), v("powerKw"),
+            v("torqueRpm"), v("intercooler"), v("engineCode"), v("timingSystem"),
+            v("fuelConsumptionMethod"), v("transmission"), v("gearCount"), v("driveType"), v("turningDiameterM"),
+            v("fuelType"), v("maxSpeedKmh"), v("acceleration100"), v("fuelTankL"),
+            v("ecoStandard"), v("fuelCityL"), v("fuelHighwayL"),
+            v("fuelMixedL"), v("rangeKm"), v("co2GKm"),
+            v("frontBrakes"), v("rearBrakes"), v("frontSuspension"), v("rearSuspension"),
+            v("doorsCount"), v("countryOfOrigin"), v("vehicleClass"), v("steeringPosition"),
+            v("safetyRating"), v("safetyRatingName"),
+            v("batteryCapacityKwh"), v("electricRangeKm"), v("chargeTimeH"), v("batteryType"),
+            v("batteryTempRangeC"), v("fastChargeTimeH"), v("fastChargeDesc"),
+            v("chargeConnectorType"), v("consumptionKwhPer100km"), v("maxChargePowerKw"),
+            v("batteryAvailableKwh"), v("chargeCycles"),
+          ]);
+        }
+      }
+    }
+  }
+  const ws = XLSX.utils.aoa_to_sheet([CAR_COLUMNS, ...rows]);
+  ws["!cols"] = CAR_COLUMNS.map(() => ({ wch: 18 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "База авто");
+  XLSX.writeFile(wb, "база_авто_экспорт.xlsx");
+}
+
 export function downloadWorksTemplate() {
   const headers = ["Наименование работы"];
   const example = [
