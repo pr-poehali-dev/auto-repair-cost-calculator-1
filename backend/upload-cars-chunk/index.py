@@ -34,9 +34,19 @@ def g(row, i):
 
 
 def gn(row, i):
-    """Как g(), но возвращает None для пустых значений (для числовых полей БД)."""
+    """Как g(), но возвращает None для пустых значений (для числовых полей БД).
+    Заменяет запятую на точку (европейский формат чисел)."""
     s = g(row, i)
-    return s if s else None
+    if not s:
+        return None
+    s = s.replace(",", ".")
+    # Убираем пробелы-разделители тысяч (например "1 500")
+    s = s.replace(" ", "").replace("\xa0", "")
+    try:
+        float(s)
+        return s
+    except ValueError:
+        return None
 
 
 def make_col_index(header: list) -> dict:
