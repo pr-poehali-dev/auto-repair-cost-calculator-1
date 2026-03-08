@@ -100,6 +100,13 @@ def handler(event: dict, context) -> dict:
             return ""
         return str(val).strip()
 
+    NUMERIC_COLS = {
+        "battery_capacity_kwh", "charge_time_h", "fast_charge_time_h",
+        "consumption_kwh_per_100km", "max_charge_power_kw", "battery_available_kwh",
+    }
+    INT_COLS = {"electric_range_km", "charge_cycles"}
+    NOT_NULL_TEXT = {"id", "generation_id", "model_id", "brand_id", "name", "engine", "transmission", "power"}
+
     batch = []
     for row in rows:
         row_id = g(row, "id")
@@ -109,7 +116,27 @@ def handler(event: dict, context) -> dict:
 
         values = []
         for col in expected_cols:
-            values.append(g(row, col) or ("" if col not in ("engine", "transmission", "power") else ""))
+            val = g(row, col)
+            if col in NUMERIC_COLS:
+                if val == "" or val.lower() in ("none", "nan"):
+                    values.append(None)
+                else:
+                    try:
+                        values.append(float(val.replace(",", ".")))
+                    except ValueError:
+                        values.append(None)
+            elif col in INT_COLS:
+                if val == "" or val.lower() in ("none", "nan"):
+                    values.append(None)
+                else:
+                    try:
+                        values.append(int(float(val.replace(",", "."))))
+                    except ValueError:
+                        values.append(None)
+            elif col in NOT_NULL_TEXT:
+                values.append(val or "")
+            else:
+                values.append(val if val else None)
         batch.append(tuple(values))
 
     if batch:
