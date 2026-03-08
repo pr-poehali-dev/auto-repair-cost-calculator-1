@@ -234,29 +234,30 @@ const TabDatabase = () => {
         }
 
         setExportStatus({ type: "success", msg: `Формирую ${name} (${rows.length} строк)…` });
-        const testWb = XLSX.utils.book_new();
-        const sampleSize = Math.min(200, rows.length);
-        XLSX.utils.book_append_sheet(testWb, makeSheet(rows.slice(0, sampleSize)), name);
-        const sampleBuf = XLSX.write(testWb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
-        const bytesPerRow = sampleBuf.byteLength / sampleSize;
-        const estimatedSize = bytesPerRow * rows.length;
+        await new Promise(r => setTimeout(r, 10));
 
-        if (estimatedSize <= MAX_FILE_BYTES) {
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, makeSheet(rows), name);
-          zip.file(`${name}.xlsx`, XLSX.write(wb, { type: "array", bookType: "xlsx" }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, makeSheet(rows), name);
+        const fullBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+        const realSize = fullBuf.byteLength;
+        console.log(`[export] ${name}: ${rows.length} rows, xlsx size = ${(realSize / 1024 / 1024).toFixed(2)} MB`);
+
+        if (realSize <= MAX_FILE_BYTES) {
+          zip.file(`${name}.xlsx`, fullBuf);
           fileCount++;
         } else {
-          const rowsPerFile = Math.max(100, Math.floor((MAX_FILE_BYTES * 0.9) / bytesPerRow));
+          const partsNeeded = Math.ceil(realSize / (MAX_FILE_BYTES * 0.9));
+          const rowsPerFile = Math.max(50, Math.ceil(rows.length / partsNeeded));
+          console.log(`[export] ${name}: splitting into ${partsNeeded} parts, ${rowsPerFile} rows each`);
           let partNum = 1;
           for (let i = 0; i < rows.length; i += rowsPerFile) {
             const chunk = rows.slice(i, i + rowsPerFile);
             const from = i + 1;
             const to = Math.min(i + rowsPerFile, rows.length);
-            setExportStatus({ type: "success", msg: `${name} часть ${partNum} (строки ${from}–${to})…` });
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeSheet(chunk), name);
-            zip.file(`${name}_${partNum}.xlsx`, XLSX.write(wb, { type: "array", bookType: "xlsx" }));
+            setExportStatus({ type: "success", msg: `${name} часть ${partNum}/${partsNeeded} (строки ${from}–${to})…` });
+            const partWb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(partWb, makeSheet(chunk), name);
+            zip.file(`${name}_${partNum}.xlsx`, XLSX.write(partWb, { type: "array", bookType: "xlsx" }));
             fileCount++;
             partNum++;
             await new Promise(r => setTimeout(r, 30));
