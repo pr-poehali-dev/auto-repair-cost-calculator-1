@@ -33,6 +33,12 @@ def g(row, i):
     return "" if s in ("None", "none", "") else s
 
 
+def gn(row, i):
+    """Как g(), но возвращает None для пустых значений (для числовых полей БД)."""
+    s = g(row, i)
+    return s if s else None
+
+
 def make_col_index(header: list) -> dict:
     """Строит словарь название_колонки -> индекс (регистронезависимо, без лишних пробелов)."""
     return {str(h).strip().lower(): i for i, h in enumerate(header)}
@@ -91,6 +97,11 @@ def process_rows(cur, rows, col_idx: dict):
             return g(row, i)
         return g(row, fallback_i)
 
+    def gcn(row, col_name: str, fallback_i: int):
+        """Как gc(), но возвращает None для пустых (числовые поля БД)."""
+        s = gc(row, col_name, fallback_i)
+        return s if s else None
+
     for row in rows:
         brand_name = gc(row, "марка", 0)
         model_name = gc(row, "модель", 1)
@@ -127,80 +138,80 @@ def process_rows(cur, rows, col_idx: dict):
             gens_seen.add(gen_id)
 
         engine_type = gc(row, "тип двигателя", 32)
-        engine_volume_cc = gc(row, "объем двигателя [см3]", 33)
+        engine_volume_cc = gcn(row, "объем двигателя [см3]", 33)
         power_val = gc(row, "мощность двигателя [л.с.]", 34)
-        power_rpm = gc(row, "обороты максимальной мощности [об/мин]", 35)
-        torque_nm = gc(row, "максимальный крутящий момент [н*м]", 36)
+        power_rpm = gcn(row, "обороты максимальной мощности [об/мин]", 35)
+        torque_nm = gcn(row, "максимальный крутящий момент [н*м]", 36)
         intake_type = gc(row, "тип впуска", 37)
         cylinder_layout = gc(row, "расположение цилиндров", 38)
-        cylinder_count = gc(row, "количество цилиндров", 39)
-        compression_ratio = gc(row, "степень сжатия", 40)
-        valves_per_cylinder = gc(row, "количество клапанов на цилиндр", 41)
+        cylinder_count = gcn(row, "количество цилиндров", 39)
+        compression_ratio = gcn(row, "степень сжатия", 40)
+        valves_per_cylinder = gcn(row, "количество клапанов на цилиндр", 41)
         turbo_type = gc(row, "тип наддува", 42)
-        bore_mm = gc(row, "диаметр цилиндра [мм]", 43)
-        stroke_mm = gc(row, "ход поршня [мм]", 44)
+        bore_mm = gcn(row, "диаметр цилиндра [мм]", 43)
+        stroke_mm = gcn(row, "ход поршня [мм]", 44)
         engine_model = gc(row, "модель двигателя", 45)
         engine_location = gc(row, "расположение двигателя", 46)
-        power_kw = gc(row, "максимальная мощность (квт) [квт]", 47)
-        torque_rpm = gc(row, "обороты максимального крутящего момента [об/мин]", 48)
+        power_kw = gcn(row, "максимальная мощность (квт) [квт]", 47)
+        torque_rpm = gcn(row, "обороты максимального крутящего момента [об/мин]", 48)
         intercooler = gc(row, "наличие интеркулера", 49)
         engine_code = gc(row, "код двигателя", 50)
         timing_system = gc(row, "грм", 51)
         fuel_consumption_method = gc(row, "методика расчета расхода", 52)
         transmission = gc(row, "тип кпп", 53) or "—"
-        gear_count = gc(row, "количество передач", 54)
+        gear_count = gcn(row, "количество передач", 54)
         drive_type = gc(row, "привод", 55)
-        turning_diameter_m = gc(row, "диаметр разворота [м]", 56)
-        battery_capacity_kwh = gc(row, "емкость батареи [квт⋅ч]", 77)
-        electric_range_km = gc(row, "запас хода на электричестве [км]", 78)
-        charge_time_h = gc(row, "время зарядки [ч]", 79)
+        turning_diameter_m = gcn(row, "диаметр разворота [м]", 56)
+        battery_capacity_kwh = gcn(row, "емкость батареи [квт⋅ч]", 77)
+        electric_range_km = gcn(row, "запас хода на электричестве [км]", 78)
+        charge_time_h = gcn(row, "время зарядки [ч]", 79)
         battery_type = gc(row, "тип батареи", 80)
         battery_temp_range_c = gc(row, "температурный режим батареи [c]", 81)
-        fast_charge_time_h = gc(row, "время быстрой зарядки [ч]", 82)
+        fast_charge_time_h = gcn(row, "время быстрой зарядки [ч]", 82)
         fast_charge_desc = gc(row, "описание быстрой зарядки", 83)
         charge_connector_type = gc(row, "тип разъема для зарядки", 84)
-        consumption_kwh_per_100km = gc(row, "расход [квт⋅ч/100 км]", 85)
-        max_charge_power_kw = gc(row, "максимальная мощность зарядки [квт]", 86)
-        battery_available_kwh = gc(row, "ёмкость батареи (доступная) [квт⋅ч]", 87)
-        charge_cycles = gc(row, "количество циклов зарядки", 88)
+        consumption_kwh_per_100km = gcn(row, "расход [квт⋅ч/100 км]", 85)
+        max_charge_power_kw = gcn(row, "максимальная мощность зарядки [квт]", 86)
+        battery_available_kwh = gcn(row, "ёмкость батареи (доступная) [квт⋅ч]", 87)
+        charge_cycles = gcn(row, "количество циклов зарядки", 88)
 
         parts = [p for p in [engine_type, f"{engine_volume_cc} см³" if engine_volume_cc else "", f"{power_val} л.с." if power_val else ""] if p]
         engine = " ".join(parts) if parts else mod_name
         power = power_val or "—"
 
-        body_type = gc(row, "тип кузова", 7); seats = gc(row, "количество мест", 8)
-        length_mm = gc(row, "длина [мм]", 9); width_mm = gc(row, "ширина [мм]", 10)
-        height_mm = gc(row, "высота [мм]", 11); wheelbase_mm = gc(row, "колёсная база [мм]", 12)
-        track_front_mm = gc(row, "колея передняя [мм]", 13); track_rear_mm = gc(row, "колея задняя [мм]", 14)
-        curb_weight_kg = gc(row, "снаряженная масса [кг]", 15)
-        wheel_size = gc(row, "размер колёс", 16); ground_clearance_mm = gc(row, "дорожный просвет [мм]", 17)
-        trunk_max_l = gc(row, "объем багажника максимальный [л]", 18)
-        trunk_min_l = gc(row, "объем багажника минимальный [л]", 19)
-        gross_weight_kg = gc(row, "полная масса [кг]", 20)
-        disk_size = gc(row, "размер дисков", 21); clearance_mm = gc(row, "клиренс [мм]", 22)
-        track_front_width_mm = gc(row, "ширина передней колеи [мм]", 23)
-        track_rear_width_mm = gc(row, "ширина задней колеи [мм]", 24)
-        payload_kg = gc(row, "грузоподъёмность [кг]", 25)
-        train_weight_kg = gc(row, "разрешённая масса автопоезда [кг]", 26)
-        axle_load_kg = gc(row, "нагрузка на переднюю/заднюю ось [кг]", 27)
-        loading_height_mm = gc(row, "погрузочная высота [мм]", 28)
+        body_type = gc(row, "тип кузова", 7); seats = gcn(row, "количество мест", 8)
+        length_mm = gcn(row, "длина [мм]", 9); width_mm = gcn(row, "ширина [мм]", 10)
+        height_mm = gcn(row, "высота [мм]", 11); wheelbase_mm = gcn(row, "колёсная база [мм]", 12)
+        track_front_mm = gcn(row, "колея передняя [мм]", 13); track_rear_mm = gcn(row, "колея задняя [мм]", 14)
+        curb_weight_kg = gcn(row, "снаряженная масса [кг]", 15)
+        wheel_size = gc(row, "размер колёс", 16); ground_clearance_mm = gcn(row, "дорожный просвет [мм]", 17)
+        trunk_max_l = gcn(row, "объем багажника максимальный [л]", 18)
+        trunk_min_l = gcn(row, "объем багажника минимальный [л]", 19)
+        gross_weight_kg = gcn(row, "полная масса [кг]", 20)
+        disk_size = gc(row, "размер дисков", 21); clearance_mm = gcn(row, "клиренс [мм]", 22)
+        track_front_width_mm = gcn(row, "ширина передней колеи [мм]", 23)
+        track_rear_width_mm = gcn(row, "ширина задней колеи [мм]", 24)
+        payload_kg = gcn(row, "грузоподъёмность [кг]", 25)
+        train_weight_kg = gcn(row, "разрешённая масса автопоезда [кг]", 26)
+        axle_load_kg = gcn(row, "нагрузка на переднюю/заднюю ось [кг]", 27)
+        loading_height_mm = gcn(row, "погрузочная высота [мм]", 28)
         cargo_compartment_dims = gc(row, "грузовой отсек (длина x ширина x высота) [мм]", 29)
-        cargo_volume_m3 = gc(row, "объём грузового отсека [м3]", 30)
+        cargo_volume_m3 = gcn(row, "объём грузового отсека [м3]", 30)
         bolt_pattern = gc(row, "сверловка [мм]", 31)
         fuel_type = gc(row, "марка топлива", 57)
-        max_speed_kmh = gc(row, "максимальная скорость [км/ч]", 58)
-        acceleration_100 = gc(row, "разгон до 100 км/ч [сек]", 59)
-        fuel_tank_l = gc(row, "объём топливного бака [л]", 60)
+        max_speed_kmh = gcn(row, "максимальная скорость [км/ч]", 58)
+        acceleration_100 = gcn(row, "разгон до 100 км/ч [сек]", 59)
+        fuel_tank_l = gcn(row, "объём топливного бака [л]", 60)
         eco_standard = gc(row, "экологический стандарт", 61)
-        fuel_city_l = gc(row, "расход топлива в городе на 100 км [л]", 62)
-        fuel_highway_l = gc(row, "расход топлива на шоссе на 100 км [л]", 63)
-        fuel_mixed_l = gc(row, "расход топлива в смешанном цикле на 100 км [л]", 64)
-        range_km = gc(row, "запас хода [км]", 65); co2_g_km = gc(row, "выбросы co2 [г/км]", 66)
+        fuel_city_l = gcn(row, "расход топлива в городе на 100 км [л]", 62)
+        fuel_highway_l = gcn(row, "расход топлива на шоссе на 100 км [л]", 63)
+        fuel_mixed_l = gcn(row, "расход топлива в смешанном цикле на 100 км [л]", 64)
+        range_km = gcn(row, "запас хода [км]", 65); co2_g_km = gcn(row, "выбросы co2 [г/км]", 66)
         front_brakes = gc(row, "передние тормоза", 67); rear_brakes = gc(row, "задние тормоза", 68)
         front_suspension = gc(row, "передняя подвеска", 69); rear_suspension = gc(row, "задняя подвеска", 70)
-        doors_count = gc(row, "количество дверей", 71); country_of_origin = gc(row, "страна марки", 72)
+        doors_count = gcn(row, "количество дверей", 71); country_of_origin = gc(row, "страна марки", 72)
         vehicle_class = gc(row, "класс автомобиля", 73); steering_position = gc(row, "расположение руля", 74)
-        safety_rating = gc(row, "оценка безопасности", 75); safety_rating_name = gc(row, "название рейтинга", 76)
+        safety_rating = gcn(row, "оценка безопасности", 75); safety_rating_name = gc(row, "название рейтинга", 76)
 
         mods_batch.append((
             mod_id, gen_id, mod_name, engine, transmission, power,
