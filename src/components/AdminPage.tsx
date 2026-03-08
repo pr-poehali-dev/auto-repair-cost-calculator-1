@@ -222,10 +222,20 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
     setReloadLoading(true);
     setReloadStatus(null);
     try {
-      await reloadCarDb();
-      setReloadStatus({ type: "success", msg: "База данных успешно обновлена!" });
-    } catch {
-      setReloadStatus({ type: "error", msg: "Ошибка при обновлении базы." });
+      const FUNC_GET_CARS = "https://functions.poehali.dev/135a6c4a-9149-40f9-a7a8-cf2ce637fdb2";
+      const res = await fetch(FUNC_GET_CARS);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const raw = await res.json();
+      const tree = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (Array.isArray(tree) && tree.length > 0) {
+        setCarDatabase(tree);
+        await reloadCarDb();
+        setReloadStatus({ type: "success", msg: `База обновлена! Загружено ${tree.length} марок.` });
+      } else {
+        setReloadStatus({ type: "error", msg: "База пуста. Сначала загрузите Excel-файл." });
+      }
+    } catch (e) {
+      setReloadStatus({ type: "error", msg: `Ошибка: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
     } finally {
       setReloadLoading(false);
     }
