@@ -95,6 +95,22 @@ const TabDatabase = () => {
   const [filterLoading, setFilterLoading] = useState(false);
   const filterFileRef = useRef<HTMLInputElement>(null);
 
+  const [reloadStatus, setReloadStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [reloadLoading, setReloadLoading] = useState(false);
+
+  const handleReloadDb = async () => {
+    setReloadLoading(true);
+    setReloadStatus(null);
+    try {
+      await reloadCarDb();
+      setReloadStatus({ type: "success", msg: "База данных успешно обновлена!" });
+    } catch {
+      setReloadStatus({ type: "error", msg: "Ошибка при обновлении базы данных." });
+    } finally {
+      setReloadLoading(false);
+    }
+  };
+
   const [carsStatus, setCarsStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [filledStatus, setFilledStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -421,8 +437,25 @@ const TabDatabase = () => {
             </div>
           )}
           {carDbCount > 0 && uploadProgress === null && (
-            <div className="mb-3 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-              <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
+            <div className="mb-3 flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+              <span className="flex items-center gap-2">
+                <Icon name="CheckCircle" size={13} />В базе: {carDbCount.toLocaleString("ru-RU")} модификаций
+              </span>
+              <button
+                type="button"
+                onClick={handleReloadDb}
+                disabled={reloadLoading}
+                className="flex items-center gap-1.5 px-3 py-1 bg-green-600 text-white rounded text-xs font-semibold hover:bg-green-700 transition-all disabled:opacity-60 disabled:pointer-events-none whitespace-nowrap"
+              >
+                <Icon name={reloadLoading ? "Loader" : "RefreshCw"} size={12} className={reloadLoading ? "animate-spin" : ""} />
+                {reloadLoading ? "Обновляю…" : "Обновить базу данных"}
+              </button>
+            </div>
+          )}
+          {reloadStatus && uploadProgress === null && (
+            <div className={`mb-3 flex items-center gap-2 p-2.5 rounded border text-xs ${reloadStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+              <Icon name={reloadStatus.type === "success" ? "CheckCircle" : "XCircle"} size={13} className="shrink-0" />
+              {reloadStatus.msg}
             </div>
           )}
           <div className="overflow-x-auto rounded border border-border mb-4">
