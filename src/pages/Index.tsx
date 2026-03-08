@@ -3,6 +3,8 @@ import { FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_FILE } from "@/components/adm
 import { Branch } from "@/components/admin/TabBranches";
 
 const FUNC_GET_CARS = "https://functions.poehali.dev/135a6c4a-9149-40f9-a7a8-cf2ce637fdb2";
+const FUNC_LOAD_ADMIN = "https://functions.poehali.dev/29e28049-1517-455f-9455-fb5b931d0ba4";
+const FUNC_SAVE_ADMIN = "https://functions.poehali.dev/1a0f5a3e-6b5e-4087-8f32-7dac070e3112";
 
 const LS_CARS = "remtech_cars_v1";
 const LS_WORKS = "remtech_works_v1";
@@ -26,6 +28,23 @@ function saveLS(key: string, value: unknown) {
   } catch {
     // quota exceeded — ignore
   }
+}
+
+const DB_KEY_MAP: Record<string, string> = {
+  [LS_WORKS]: "works",
+  [LS_LINKS]: "work_links",
+  [LS_WORK_FILTERS]: "work_filters",
+  [LS_BRANCHES]: "branches",
+};
+
+function saveToDb(lsKey: string, value: unknown) {
+  const dbKey = DB_KEY_MAP[lsKey];
+  if (!dbKey) return;
+  fetch(FUNC_SAVE_ADMIN, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key: dbKey, value }),
+  }).catch(() => {});
 }
 import Layout from "@/components/Layout";
 import CalculatorPage from "@/components/CalculatorPage";
@@ -209,9 +228,9 @@ const Index = () => {
   const autoSyncRanRef = useRef(false);
 
   const setCarDatabase = (data: CarBrand[]) => { setCarDatabaseRaw(data); saveLS(LS_CARS, data); };
-  const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); };
-  const setWorkLinks = (data: WorkLinkGroup[]) => { setWorkLinksRaw(data); saveLS(LS_LINKS, data); };
-  const setWorkFilters = (data: WorkFilter[]) => { setWorkFiltersRaw(data); saveLS(LS_WORK_FILTERS, data); };
+  const setWorksDatabase = (data: WorkEntry[]) => { setWorksDatabaseRaw(data); saveLS(LS_WORKS, data); saveToDb(LS_WORKS, data); };
+  const setWorkLinks = (data: WorkLinkGroup[]) => { setWorkLinksRaw(data); saveLS(LS_LINKS, data); saveToDb(LS_LINKS, data); };
+  const setWorkFilters = (data: WorkFilter[]) => { setWorkFiltersRaw(data); saveLS(LS_WORK_FILTERS, data); saveToDb(LS_WORK_FILTERS, data); };
   const setCarsUrl = (url: string) => { setCarsUrlRaw(url); saveLS(LS_CARS_URL, url); };
   const setCarsUrlEnabled = (v: boolean) => { setCarsUrlEnabledRaw(v); saveLS(LS_CARS_URL_ENABLED, v); };
 
@@ -282,6 +301,8 @@ const Index = () => {
     if (url) runAutoSync(url);
   }, [runAutoSync]);
 
+  const dbLoadedRef = useRef(false);
+
   useEffect(() => {
     reloadCarDb();
     if (!autoSyncRanRef.current) {
@@ -289,11 +310,40 @@ const Index = () => {
       const url = loadLS<string>(LS_CARS_URL, "");
       if (url) runAutoSync(url);
     }
+    if (!dbLoadedRef.current) {
+      dbLoadedRef.current = true;
+      fetch(FUNC_LOAD_ADMIN)
+        .then((r) => r.json())
+        .then((raw) => {
+          const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (data.works && Array.isArray(data.works) && data.works.length > 0) {
+            setWorksDatabaseRaw(data.works);
+            saveLS(LS_WORKS, data.works);
+          }
+          if (data.work_links && Array.isArray(data.work_links) && data.work_links.length > 0) {
+            setWorkLinksRaw(data.work_links);
+            saveLS(LS_LINKS, data.work_links);
+          }
+          if (data.work_filters && Array.isArray(data.work_filters) && data.work_filters.length > 0) {
+            setWorkFiltersRaw(data.work_filters);
+            saveLS(LS_WORK_FILTERS, data.work_filters);
+          }
+          if (data.branches && Array.isArray(data.branches) && data.branches.length > 0) {
+            setBranchesRaw(data.branches);
+            saveLS(LS_BRANCHES, data.branches);
+          }
+          if (data.settings && typeof data.settings === "object") {
+            if (data.settings.ratePerHour) setRatePerHour(data.settings.ratePerHour);
+          }
+        })
+        .catch(() => {});
+    }
   }, [reloadCarDb, runAutoSync]);
   const setBranches = (fn: (prev: Branch[]) => Branch[]) => {
     setBranchesRaw((prev) => {
       const next = fn(prev);
       saveLS(LS_BRANCHES, next);
+      saveToDb(LS_BRANCHES, next);
       return next;
     });
   };
@@ -314,7 +364,7 @@ const Index = () => {
           <CalculatorPage onAddToHistory={addToHistory} />
         </div>
         <div style={{ display: activeTab === "admin" ? undefined : "none" }}>
-          <AdminPage ratePerHour={ratePerHour} onRateChange={setRatePerHour} />
+          <AdminPage ratePerHour={ratePerHour} onRateChange={(v: number) => { setRatePerHour(v); fetch(FUNC_SAVE_ADMIN, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "settings", value: { ratePerHour: v } }) }).catch(() => {}); }} />
         </div>
         <div style={{ display: activeTab === "history" ? undefined : "none" }}>
           <HistoryPage history={history} onClear={() => setHistory([])} />

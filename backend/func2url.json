@@ -1,4 +1,6 @@
 {
+  "load-admin-data": "https://functions.poehali.dev/29e28049-1517-455f-9455-fb5b931d0ba4",
+  "save-admin-data": "https://functions.poehali.dev/1a0f5a3e-6b5e-4087-8f32-7dac070e3112",
   "load-cars-from-url": "https://functions.poehali.dev/6a9fc23a-e05b-4445-ac41-3ff11fcf2b69",
   "parse-yandex-chunks": "https://functions.poehali.dev/386bb2c7-2a1c-44b9-a477-bb81f6c8ad68",
   "parse-yandex-file": "https://functions.poehali.dev/f802c916-bdfb-4ef7-a22c-a1237da0580d",
