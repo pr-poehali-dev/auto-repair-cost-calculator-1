@@ -374,7 +374,7 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
           }
         }
       }
-      const MAX_CSV_BYTES = 5 * 1024 * 1024;
+      const MAX_CSV_BYTES = 4 * 1024 * 1024;
       const esc = (v: string) => {
         if (v.includes(";") || v.includes('"') || v.includes("\n")) return '"' + v.replace(/"/g, '""') + '"';
         return v;
