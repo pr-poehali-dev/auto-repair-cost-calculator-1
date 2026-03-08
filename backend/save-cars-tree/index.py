@@ -114,10 +114,8 @@ def handler(event: dict, context) -> dict:
             "INSERT INTO car_generations (id, model_id, name, years) VALUES %s ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, years=EXCLUDED.years",
             gens_batch)
 
-    conn.commit()
-
     if mods_batch:
-        BATCH = 50
+        BATCH = 500
         for i in range(0, len(mods_batch), BATCH):
             execute_values(cur, """
                 INSERT INTO car_modifications (
@@ -137,7 +135,8 @@ def handler(event: dict, context) -> dict:
                     front_suspension=EXCLUDED.front_suspension, rear_suspension=EXCLUDED.rear_suspension,
                     fuel_type=EXCLUDED.fuel_type, turbo_type=EXCLUDED.turbo_type
             """, mods_batch[i:i+BATCH])
-            conn.commit()
+
+    conn.commit()
     cur.close()
     conn.close()
 
