@@ -5,6 +5,7 @@ import { CarBrand, Work } from "@/data/carDatabase";
 import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplateHelper, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_CHUNKS, FUNC_PARSE_YANDEX_FILE } from "@/components/admin/adminHelpers";
 
 const FUNC_SAVE_CARS_TREE = "https://functions.poehali.dev/1e853609-fb61-44ee-b891-395a0182cc16";
+const FUNC_EXPORT_DB = "https://functions.poehali.dev/bb2bb98a-1efe-4710-b390-0b2b9cb7402c";
 import * as XLSX from "xlsx";
 import TabDashboard from "@/components/admin/TabDashboard";
 import TabBranches from "@/components/admin/TabBranches";
@@ -322,6 +323,59 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
   const [pendingWorks, setPendingWorks] = useState<WorkEntry[] | null>(() => worksDatabase.length > 0 ? worksDatabase : null);
   const [dbReady, setDbReady] = useState(false);
   const filledFileRef = useRef<HTMLInputElement>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportStatus, setExportStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  const handleExportDbTables = async () => {
+    setExportLoading(true);
+    setExportStatus({ type: "success", msg: "Загружаю таблицы с сервера…" });
+    try {
+      const tableNames = ["admin_data", "car_brands", "car_models", "car_generations", "car_modifications"];
+      const allData: Record<string, Record<string, unknown>[]> = {};
+      for (const t of tableNames) {
+        let allRows: Record<string, unknown>[] = [];
+        let offset = 0;
+        const limit = 3000;
+        while (true) {
+          setExportStatus({ type: "success", msg: `Загружаю ${t}… (${allRows.length} строк)` });
+          const res = await fetch(`${FUNC_EXPORT_DB}?table=${t}&offset=${offset}&limit=${limit}`);
+          if (!res.ok) throw new Error(`Ошибка загрузки ${t}`);
+          const d = await res.json();
+          const parsed = typeof d === "string" ? JSON.parse(d) : d;
+          allRows = allRows.concat(parsed.rows);
+          if (allRows.length >= parsed.total) break;
+          offset += limit;
+        }
+        allData[t] = allRows;
+      }
+      setExportStatus({ type: "success", msg: "Формирую Excel…" });
+      const wb = XLSX.utils.book_new();
+      for (const [name, rows] of Object.entries(allData)) {
+        if (rows.length === 0) {
+          const ws = XLSX.utils.aoa_to_sheet([["Таблица пуста"]]);
+          XLSX.utils.book_append_sheet(wb, ws, name);
+          continue;
+        }
+        const headers = Object.keys(rows[0]);
+        const data = rows.map(r => headers.map(h => {
+          const v = r[h];
+          if (v === null || v === undefined) return "";
+          if (typeof v === "object") return JSON.stringify(v);
+          return v;
+        }));
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+        ws["!cols"] = headers.map(() => ({ wch: 20 }));
+        XLSX.utils.book_append_sheet(wb, ws, name);
+      }
+      XLSX.writeFile(wb, "экспорт_базы_данных.xlsx");
+      setExportStatus({ type: "success", msg: "Файл скачан!" });
+      setTimeout(() => setExportStatus(null), 3000);
+    } catch (e) {
+      setExportStatus({ type: "error", msg: e instanceof Error ? e.message : "Ошибка экспорта" });
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const handleSaveRate = () => {
     const val = parseFloat(inputValue);
@@ -692,6 +746,23 @@ const AdminPage = ({ ratePerHour, onRateChange }: Props) => {
                     </table>
                   </div>
                 </UploadBlock>
+
+                {/* Кнопка экспорта таблиц БД */}
+                <div className="mt-2">
+                  <button
+                    onClick={handleExportDbTables}
+                    disabled={exportLoading || (!hasCars && carDatabase.length === 0)}
+                    className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Icon name={exportLoading ? "Loader" : "Database"} size={14} className={exportLoading ? "animate-spin" : ""} />
+                    Скачать таблицы базы данных для сервера
+                  </button>
+                  {exportStatus && (
+                    <p className={`text-xs px-2 mt-1 ${exportStatus.type === "error" ? "text-red-600" : "text-blue-600"}`}>
+                      {exportStatus.msg}
+                    </p>
+                  )}
+                </div>
 
                 {/* Кнопка обновления базы */}
                 <div className="p-4 border-2 border-dashed border-blue-400 rounded-lg bg-blue-50">
