@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { useAppData, WorkEntry } from "@/pages/Index";
+import { useAppData, WorkEntry, WorkFilterParam } from "@/pages/Index";
 import { UploadBlock } from "@/components/admin/AdminPageUIBlocks";
 import { downloadWorksTemplate, mergeWorks, parseWorksList } from "@/components/admin/adminPageHelpers";
 import * as XLSX from "xlsx";
@@ -24,7 +24,7 @@ const SelectBox = ({
 );
 
 const TabEditor = () => {
-  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, loadModifications, modsLoading } = useAppData();
+  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, loadModifications, modsLoading, workFilters } = useAppData();
 
   // ── Загрузка списка работ из Excel ─────────────────────────────────────────
   const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -180,6 +180,27 @@ const TabEditor = () => {
 
   const mod = useMemo(() => filteredMods.find((m) => m.id === modId), [filteredMods, modId]);
 
+  const blockedWorkNames = useMemo(() => {
+    if (!mod || workFilters.length === 0) return new Set<string>();
+    const blocked = new Set<string>();
+    workFilters.forEach((wf) => {
+      const activeRules = wf.rules.filter((r) => r.allowedValues.length > 0);
+      if (activeRules.length === 0) return;
+      const isBlocked = activeRules.some((r) => {
+        const modVal = String((mod as Record<string, unknown>)[r.param as WorkFilterParam] ?? "").trim();
+        if (!modVal || modVal === "—") return false;
+        return !r.allowedValues.includes(modVal);
+      });
+      if (isBlocked) blocked.add(wf.workName);
+    });
+    return blocked;
+  }, [mod, workFilters]);
+
+  const availableWorks = useMemo(
+    () => worksDatabase.filter((w) => !blockedWorkNames.has(w.name)),
+    [worksDatabase, blockedWorkNames]
+  );
+
   // Reset helpers
   const resetFilters = () => {
     setFilterEngineType("");
@@ -249,7 +270,7 @@ const TabEditor = () => {
   const handleSaveHours = async () => {
     if (!modId || !mod) return;
 
-    const works = worksDatabase
+    const works = availableWorks
       .map((w) => {
         const hours = parseFloat(String(hoursMap[w.name]).replace(",", "."));
         if (!isNaN(hours) && hours > 0) return { name: w.name, hours };
@@ -266,7 +287,7 @@ const TabEditor = () => {
       });
       if (res.ok) {
         // Also update local carDatabase so it reflects the changes
-        const worksList = worksDatabase.map((w) => {
+        const worksList = availableWorks.map((w) => {
           const existingWork = mod.works.find((ew) => ew.name === w.name);
           const hours = parseFloat(String(hoursMap[w.name]).replace(",", "."));
           if (!isNaN(hours) && hours > 0) return { id: existingWork?.id ?? `w-${modId}-${w.id}`, name: w.name, hours };
@@ -295,7 +316,7 @@ const TabEditor = () => {
     }
   };
 
-  const filledCount = worksDatabase.filter((w) => {
+  const filledCount = availableWorks.filter((w) => {
     const v = parseFloat(String(hoursMap[w.name]).replace(",", "."));
     return !isNaN(v) && v > 0;
   }).length;
@@ -578,7 +599,7 @@ const TabEditor = () => {
           <Icon name="Info" size={16} className="shrink-0" />
           Выберите автомобиль и модификацию для редактирования нормачасов
         </div>
-      ) : worksDatabase.length === 0 ? (
+      ) : availableWorks.length === 0 ? (
         <div className="flex items-center gap-3 p-5 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
           <Icon name="AlertTriangle" size={16} className="shrink-0" />
           Список работ пуст. Добавьте работы в блоке выше или загрузите в разделе «Базы данных».
@@ -591,7 +612,8 @@ const TabEditor = () => {
               <h3 className="font-semibold text-sm uppercase tracking-wider">Нормачасы</h3>
             </div>
             <span className="text-xs text-muted-foreground">
-              Заполнено: <strong className="text-[hsl(215,70%,22%)]">{filledCount}</strong> / {worksDatabase.length}
+              Заполнено: <strong className="text-[hsl(215,70%,22%)]">{filledCount}</strong> / {availableWorks.length}
+              {blockedWorkNames.size > 0 && <span className="ml-2 text-orange-500">({blockedWorkNames.size} скрыто по фильтрам)</span>}
             </span>
           </div>
 
@@ -602,7 +624,7 @@ const TabEditor = () => {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {worksDatabase.map((work) => {
+              {availableWorks.map((work) => {
                 const val = hoursMap[work.name] ?? "";
                 const existing = mod?.works.find((w) => w.name === work.name);
                 const isFilled = val !== "" && !isNaN(parseFloat(String(val).replace(",", "."))) && parseFloat(String(val).replace(",", ".")) > 0;
