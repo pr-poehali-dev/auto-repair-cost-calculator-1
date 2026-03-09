@@ -91,14 +91,17 @@ const TabEditor = () => {
   }, [genId, loadModifications]);
 
   useEffect(() => {
+    if (brandId && !carDatabase.find((b) => b.id === brandId)) { setBrandId(""); return; }
     if (carDatabase.length === 1 && !brandId) setBrandId(carDatabase[0].id);
   }, [carDatabase, brandId]);
 
   useEffect(() => {
+    if (modelId && brand && !brand.models.find((m) => m.id === modelId)) { setModelId(""); return; }
     if (brand && brand.models.length === 1 && !modelId) setModelId(brand.models[0].id);
   }, [brand, modelId]);
 
   useEffect(() => {
+    if (genId && model && !model.generations.find((g) => g.id === genId)) { setGenId(""); return; }
     if (model && model.generations.length === 1 && !genId) setGenId(model.generations[0].id);
   }, [model, genId]);
 
@@ -147,26 +150,31 @@ const TabEditor = () => {
 
   useEffect(() => {
     if (!genId || modsLoading) return;
+    if (filterEngineType && !engineTypeOptions.find((o) => o.id === filterEngineType)) { setFilterEngineType(""); return; }
     if (engineTypeOptions.length === 1 && !filterEngineType) setFilterEngineType(engineTypeOptions[0].id);
   }, [engineTypeOptions, filterEngineType, genId, modsLoading]);
 
   useEffect(() => {
     if (!genId || modsLoading) return;
+    if (filterEngineCode && !engineCodeOptions.find((o) => o.id === filterEngineCode)) { setFilterEngineCode(""); return; }
     if (engineCodeOptions.length === 1 && !filterEngineCode) setFilterEngineCode(engineCodeOptions[0].id);
   }, [engineCodeOptions, filterEngineCode, genId, modsLoading]);
 
   useEffect(() => {
     if (!genId || modsLoading) return;
+    if (filterTransmission && !transmissionOptions.find((o) => o.id === filterTransmission)) { setFilterTransmission(""); return; }
     if (transmissionOptions.length === 1 && !filterTransmission) setFilterTransmission(transmissionOptions[0].id);
   }, [transmissionOptions, filterTransmission, genId, modsLoading]);
 
   useEffect(() => {
     if (!genId || modsLoading) return;
+    if (filterDrive && !driveOptions.find((o) => o.id === filterDrive)) { setFilterDrive(""); return; }
     if (driveOptions.length === 1 && !filterDrive) setFilterDrive(driveOptions[0].id);
   }, [driveOptions, filterDrive, genId, modsLoading]);
 
   useEffect(() => {
     if (!genId || modsLoading) return;
+    if (modId && !filteredMods.find((m) => m.id === modId)) { setModId(""); setHoursMap({}); return; }
     if (filteredMods.length === 1 && !modId) handleModChange(filteredMods[0].id);
   }, [filteredMods, modId, genId, modsLoading]);
 

@@ -226,14 +226,17 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   }, [generationId, loadModifications]);
 
   useEffect(() => {
+    if (brandId && !carDatabase.find((b) => b.id === brandId)) { setBrandId(""); return; }
     if (carDatabase.length === 1 && !brandId) setBrandId(carDatabase[0].id);
   }, [carDatabase, brandId]);
 
   useEffect(() => {
+    if (modelId && brand && !brand.models.find((m) => m.id === modelId)) { setModelId(""); return; }
     if (brand && brand.models.length === 1 && !modelId) setModelId(brand.models[0].id);
   }, [brand, modelId]);
 
   useEffect(() => {
+    if (generationId && model && !model.generations.find((g) => g.id === generationId)) { setGenerationId(""); return; }
     if (model && model.generations.length === 1 && !generationId) setGenerationId(model.generations[0].id);
   }, [model, generationId]);
 
@@ -282,26 +285,31 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
 
   useEffect(() => {
     if (!generationId || modsLoading) return;
+    if (filterEngineType && !engineTypeOptions.find((o) => o.id === filterEngineType)) { setFilterEngineType(""); return; }
     if (engineTypeOptions.length === 1 && !filterEngineType) setFilterEngineType(engineTypeOptions[0].id);
   }, [engineTypeOptions, filterEngineType, generationId, modsLoading]);
 
   useEffect(() => {
     if (!generationId || modsLoading) return;
+    if (filterEngineCode && !engineCodeOptions.find((o) => o.id === filterEngineCode)) { setFilterEngineCode(""); return; }
     if (engineCodeOptions.length === 1 && !filterEngineCode) setFilterEngineCode(engineCodeOptions[0].id);
   }, [engineCodeOptions, filterEngineCode, generationId, modsLoading]);
 
   useEffect(() => {
     if (!generationId || modsLoading) return;
+    if (filterTransmission && !transmissionOptions.find((o) => o.id === filterTransmission)) { setFilterTransmission(""); return; }
     if (transmissionOptions.length === 1 && !filterTransmission) setFilterTransmission(transmissionOptions[0].id);
   }, [transmissionOptions, filterTransmission, generationId, modsLoading]);
 
   useEffect(() => {
     if (!generationId || modsLoading) return;
+    if (filterDrive && !driveOptions.find((o) => o.id === filterDrive)) { setFilterDrive(""); return; }
     if (driveOptions.length === 1 && !filterDrive) setFilterDrive(driveOptions[0].id);
   }, [driveOptions, filterDrive, generationId, modsLoading]);
 
   useEffect(() => {
     if (!generationId || modsLoading) return;
+    if (modificationId && !filteredMods.find((m) => m.id === modificationId)) { setModificationId(""); return; }
     if (filteredMods.length === 1 && !modificationId) setModificationId(filteredMods[0].id);
   }, [filteredMods, modificationId, generationId, modsLoading]);
 
