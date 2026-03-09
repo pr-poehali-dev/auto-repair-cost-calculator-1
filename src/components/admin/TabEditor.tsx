@@ -134,6 +134,31 @@ const TabEditor = () => {
     [modsAfterTransmission, filterDrive]
   );
 
+  useEffect(() => {
+    if (!genId || modsLoading) return;
+    if (engineTypeOptions.length === 1 && !filterEngineType) setFilterEngineType(engineTypeOptions[0].id);
+  }, [engineTypeOptions, filterEngineType, genId, modsLoading]);
+
+  useEffect(() => {
+    if (!genId || modsLoading) return;
+    if (engineCodeOptions.length === 1 && !filterEngineCode) setFilterEngineCode(engineCodeOptions[0].id);
+  }, [engineCodeOptions, filterEngineCode, genId, modsLoading]);
+
+  useEffect(() => {
+    if (!genId || modsLoading) return;
+    if (transmissionOptions.length === 1 && !filterTransmission) setFilterTransmission(transmissionOptions[0].id);
+  }, [transmissionOptions, filterTransmission, genId, modsLoading]);
+
+  useEffect(() => {
+    if (!genId || modsLoading) return;
+    if (driveOptions.length === 1 && !filterDrive) setFilterDrive(driveOptions[0].id);
+  }, [driveOptions, filterDrive, genId, modsLoading]);
+
+  useEffect(() => {
+    if (!genId || modsLoading) return;
+    if (filteredMods.length === 1 && !modId) handleModChange(filteredMods[0].id);
+  }, [filteredMods, modId, genId, modsLoading]);
+
   const mod = useMemo(() => filteredMods.find((m) => m.id === modId), [filteredMods, modId]);
 
   // Reset helpers

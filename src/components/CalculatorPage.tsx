@@ -268,6 +268,31 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
     [modsAfterTransmission, filterDrive]
   );
 
+  useEffect(() => {
+    if (!generationId || modsLoading) return;
+    if (engineTypeOptions.length === 1 && !filterEngineType) setFilterEngineType(engineTypeOptions[0].id);
+  }, [engineTypeOptions, filterEngineType, generationId, modsLoading]);
+
+  useEffect(() => {
+    if (!generationId || modsLoading) return;
+    if (engineCodeOptions.length === 1 && !filterEngineCode) setFilterEngineCode(engineCodeOptions[0].id);
+  }, [engineCodeOptions, filterEngineCode, generationId, modsLoading]);
+
+  useEffect(() => {
+    if (!generationId || modsLoading) return;
+    if (transmissionOptions.length === 1 && !filterTransmission) setFilterTransmission(transmissionOptions[0].id);
+  }, [transmissionOptions, filterTransmission, generationId, modsLoading]);
+
+  useEffect(() => {
+    if (!generationId || modsLoading) return;
+    if (driveOptions.length === 1 && !filterDrive) setFilterDrive(driveOptions[0].id);
+  }, [driveOptions, filterDrive, generationId, modsLoading]);
+
+  useEffect(() => {
+    if (!generationId || modsLoading) return;
+    if (filteredMods.length === 1 && !modificationId) setModificationId(filteredMods[0].id);
+  }, [filteredMods, modificationId, generationId, modsLoading]);
+
   const modification = useMemo(() => filteredMods.find((m) => m.id === modificationId), [filteredMods, modificationId]);
   const works = useMemo(() => modification?.works ?? [], [modification]);
 
