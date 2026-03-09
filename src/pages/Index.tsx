@@ -186,6 +186,8 @@ interface AppDataContextType {
   carDbCount: number;
   carDbLoading: boolean;
   reloadCarDb: () => Promise<void>;
+  loadModifications: (genId: string) => Promise<void>;
+  modsLoading: boolean;
   carsUrl: string;
   setCarsUrl: (url: string) => void;
   carsUrlEnabled: boolean;
@@ -211,6 +213,8 @@ export const AppDataContext = createContext<AppDataContextType>({
   carDbCount: 0,
   carDbLoading: false,
   reloadCarDb: async () => {},
+  loadModifications: async () => {},
+  modsLoading: false,
   carsUrl: "",
   setCarsUrl: () => {},
   carsUrlEnabled: false,
@@ -234,6 +238,8 @@ const Index = () => {
   const [workFilters, setWorkFiltersRaw] = useState<WorkFilter[]>(() => loadLS<WorkFilter[]>(LS_WORK_FILTERS, []));
   const [carDbCount, setCarDbCount] = useState<number>(0);
   const [carDbLoading, setCarDbLoading] = useState<boolean>(false);
+  const [modsLoading, setModsLoading] = useState<boolean>(false);
+  const modsCache = useRef<Record<string, boolean>>({});
   const [carsUrl, setCarsUrlRaw] = useState<string>(() => loadLS<string>(LS_CARS_URL, ""));
   const [carsUrlEnabled, setCarsUrlEnabledRaw] = useState<boolean>(() => loadLS<boolean>(LS_CARS_URL_ENABLED, false));
   const [autoSyncStatus, setAutoSyncStatus] = useState<AutoSyncStatus>("idle");
@@ -265,6 +271,32 @@ const Index = () => {
       // ignore
     } finally {
       setCarDbLoading(false);
+    }
+  }, []);
+
+  const loadModifications = useCallback(async (genId: string) => {
+    if (modsCache.current[genId]) return;
+    setModsLoading(true);
+    try {
+      const res = await fetch(`${FUNC_GET_CARS}?gen_id=${encodeURIComponent(genId)}`);
+      const raw = await res.json();
+      const mods = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (Array.isArray(mods)) {
+        modsCache.current[genId] = true;
+        setCarDatabaseRaw((prev) => prev.map((brand) => ({
+          ...brand,
+          models: brand.models.map((model) => ({
+            ...model,
+            generations: model.generations.map((gen) =>
+              gen.id === genId ? { ...gen, modifications: mods } : gen
+            ),
+          })),
+        })));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setModsLoading(false);
     }
   }, []);
 
@@ -333,7 +365,7 @@ const Index = () => {
       try {
         const [adminRes, carsRes] = await Promise.all([
           fetch(FUNC_LOAD_ADMIN).then((r) => r.json()).then((raw) => typeof raw === "string" ? JSON.parse(raw) : raw),
-          fetch(FUNC_GET_CARS).then((r) => r.json()).then((raw) => typeof raw === "string" ? JSON.parse(raw) : raw),
+          fetch(`${FUNC_GET_CARS}?tree=1`).then((r) => r.json()).then((raw) => typeof raw === "string" ? JSON.parse(raw) : raw),
         ]);
 
         if (Array.isArray(adminRes.works)) { setWorksDatabaseRaw(adminRes.works); saveLS(LS_WORKS, adminRes.works); }
@@ -347,6 +379,7 @@ const Index = () => {
         if (Array.isArray(carsRes) && carsRes.length > 0) {
           setCarDatabaseRaw(carsRes);
           saveLS(LS_CARS, carsRes);
+          modsCache.current = {};
         }
       } catch {
         // fallback: keep cached localStorage data
@@ -393,7 +426,7 @@ const Index = () => {
   }
 
   return (
-    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, workFilters, setWorkFilters, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync, dbSyncStatus }}>
+    <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, workFilters, setWorkFilters, carDbCount, carDbLoading, reloadCarDb, loadModifications, modsLoading, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync, dbSyncStatus }}>
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         <div style={{ display: activeTab === "calculator" ? undefined : "none" }}>
           <CalculatorPage onAddToHistory={addToHistory} />

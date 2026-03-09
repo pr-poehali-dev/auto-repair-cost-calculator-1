@@ -7,9 +7,21 @@
       "expectedStatus": 200
     },
     {
-      "name": "GET count returns 200",
+      "name": "GET count",
       "method": "GET",
       "path": "/?count=1",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET tree skeleton",
+      "method": "GET",
+      "path": "/?tree=1",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET meta info",
+      "method": "GET",
+      "path": "/",
       "expectedStatus": 200
     }
   ]

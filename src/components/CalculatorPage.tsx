@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAppData, WorkFilterParam } from "@/pages/Index";
 import Icon from "@/components/ui/icon";
 import { HistoryItem } from "@/pages/Index";
@@ -194,7 +194,7 @@ function recalcCart(rawCart: CartItem[], workLinks: ReturnType<typeof useAppData
 }
 
 const CalculatorPage = ({ onAddToHistory }: Props) => {
-  const { carDatabase, branches, defaultRate, workLinks, workFilters } = useAppData();
+  const { carDatabase, branches, defaultRate, workLinks, workFilters, loadModifications, modsLoading } = useAppData();
 
   const [branchId, setBranchId] = useState(() => {
     const active = branches.filter((b) => b.active);
@@ -221,7 +221,10 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   const model = useMemo(() => brand?.models.find((m) => m.id === modelId), [brand, modelId]);
   const generation = useMemo(() => model?.generations.find((g) => g.id === generationId), [model, generationId]);
 
-  // Все модификации выбранного поколения
+  useEffect(() => {
+    if (generationId) loadModifications(generationId);
+  }, [generationId, loadModifications]);
+
   const allMods = useMemo(() => generation?.modifications ?? [], [generation]);
 
   // Уникальные значения для каждого фильтра (из оставшихся после предыдущих фильтров)
@@ -473,8 +476,16 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
                 </div>
               )}
 
-              {/* Строка 3: выбор конкретной модификации */}
-              {generationId && (
+              {generationId && modsLoading && allMods.length === 0 && (
+                <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                  <div className="w-4 h-4 border-2 border-[hsl(25,95%,50%)] border-t-transparent rounded-full animate-spin" />
+                  Загружаю модификации...
+                </div>
+              )}
+              {generationId && !modsLoading && allMods.length === 0 && (
+                <p className="text-sm text-muted-foreground py-2">Модификации не найдены</p>
+              )}
+              {generationId && allMods.length > 0 && (
                 <SelectBox label="Модификация" value={modificationId} onChange={handleModChange}
                   options={filteredMods.map((m) => ({ id: m.id, label: m.name }))}
                   placeholder={filteredMods.length === 0 ? "— Нет совпадений —" : "— Выберите модификацию —"} />
