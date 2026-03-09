@@ -192,8 +192,18 @@ def handler(event: dict, context) -> dict:
         else:
             cur.execute(f"SELECT {LIGHT_MOD_COLS} FROM car_modifications WHERE generation_id=%s ORDER BY name", (gid,))
             rows = cur.fetchall()
+            mods = [mod_to_light(row) for row in rows]
+            mod_ids = [m["id"] for m in mods]
+            if mod_ids:
+                ph = ",".join(["%s"] * len(mod_ids))
+                cur.execute(f"SELECT modification_id, work_name, hours FROM modification_works WHERE modification_id IN ({ph}) ORDER BY work_name", mod_ids)
+                for wr in cur.fetchall():
+                    for m in mods:
+                        if m["id"] == wr[0]:
+                            m["works"].append({"id": f"w-{wr[0]}-{wr[1]}", "name": wr[1], "hours": float(wr[2])})
+                            break
             cur.close(); conn.close()
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps([mod_to_light(row) for row in rows])}
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps(mods)}
 
     if params.get("tree"):
         cur.execute("SELECT id FROM car_brands ORDER BY name")

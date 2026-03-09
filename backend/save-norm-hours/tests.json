@@ -1,0 +1,41 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET without modification_id",
+      "method": "GET",
+      "path": "/?modification_id=",
+      "expectedStatus": 400
+    },
+    {
+      "name": "GET works for non-existent modification",
+      "method": "GET",
+      "path": "/?modification_id=nonexistent",
+      "expectedStatus": 200
+    },
+    {
+      "name": "POST save works",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "modification_id": "test-mod-123",
+        "works": [
+          {"name": "Замена масла", "hours": 0.5},
+          {"name": "Замена фильтра", "hours": 0.3}
+        ]
+      },
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET saved works",
+      "method": "GET",
+      "path": "/?modification_id=test-mod-123",
+      "expectedStatus": 200
+    }
+  ]
+}

@@ -1,9 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
 import { UploadBlock } from "@/components/admin/AdminPageUIBlocks";
 import { downloadWorksTemplate, mergeWorks, parseWorksList } from "@/components/admin/adminPageHelpers";
 import * as XLSX from "xlsx";
+
+const FUNC_SAVE_NORM_HOURS = "https://functions.poehali.dev/be016d37-3b69-438d-a889-6e92b1da9882";
 
 const SelectBox = ({
   label, value, onChange, options, placeholder, disabled,
@@ -22,7 +24,7 @@ const SelectBox = ({
 );
 
 const TabEditor = () => {
-  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase } = useAppData();
+  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, loadModifications, modsLoading } = useAppData();
 
   // ── Загрузка списка работ из Excel ─────────────────────────────────────────
   const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -73,19 +75,126 @@ const TabEditor = () => {
   const [saved, setSaved] = useState(false);
   const [hoursMap, setHoursMap] = useState<Record<string, string>>({});
 
+  const [filterEngineType, setFilterEngineType] = useState("");
+  const [filterEngineCode, setFilterEngineCode] = useState("");
+  const [filterTransmission, setFilterTransmission] = useState("");
+  const [filterDrive, setFilterDrive] = useState("");
+  const [loadingHours, setLoadingHours] = useState(false);
+  const [savingHours, setSavingHours] = useState(false);
+
   const brand = useMemo(() => carDatabase.find((b) => b.id === brandId), [carDatabase, brandId]);
   const model = useMemo(() => brand?.models.find((m) => m.id === modelId), [brand, modelId]);
   const gen = useMemo(() => model?.generations.find((g) => g.id === genId), [model, genId]);
-  const mod = useMemo(() => gen?.modifications.find((m) => m.id === modId), [gen, modId]);
 
-  const handleModChange = (v: string) => {
-    setModId(v); setSaved(false);
-    const selectedMod = gen?.modifications.find((m) => m.id === v);
-    if (selectedMod) {
-      const map: Record<string, string> = {};
-      selectedMod.works.forEach((w) => { map[w.name] = String(w.hours); });
-      setHoursMap(map);
-    } else setHoursMap({});
+  // Load modifications when generation changes
+  useEffect(() => {
+    if (genId) loadModifications(genId);
+  }, [genId, loadModifications]);
+
+  // Cascading filter logic (same as CalculatorPage)
+  const allMods = useMemo(() => gen?.modifications ?? [], [gen]);
+
+  const engineTypeOptions = useMemo(() => {
+    const vals = [...new Set(allMods.map((m) => m.engineType).filter(Boolean))] as string[];
+    return vals.map((v) => ({ id: v, label: v }));
+  }, [allMods]);
+
+  const modsAfterEngineType = useMemo(
+    () => (filterEngineType ? allMods.filter((m) => m.engineType === filterEngineType) : allMods),
+    [allMods, filterEngineType]
+  );
+
+  const engineCodeOptions = useMemo(() => {
+    const vals = [...new Set(modsAfterEngineType.map((m) => m.engineCode).filter(Boolean))] as string[];
+    return vals.map((v) => ({ id: v, label: v }));
+  }, [modsAfterEngineType]);
+
+  const modsAfterEngineCode = useMemo(
+    () => (filterEngineCode ? modsAfterEngineType.filter((m) => m.engineCode === filterEngineCode) : modsAfterEngineType),
+    [modsAfterEngineType, filterEngineCode]
+  );
+
+  const transmissionOptions = useMemo(() => {
+    const vals = [...new Set(modsAfterEngineCode.map((m) => m.transmission).filter((v) => v && v !== "\u2014"))] as string[];
+    return vals.map((v) => ({ id: v, label: v }));
+  }, [modsAfterEngineCode]);
+
+  const modsAfterTransmission = useMemo(
+    () => (filterTransmission ? modsAfterEngineCode.filter((m) => m.transmission === filterTransmission) : modsAfterEngineCode),
+    [modsAfterEngineCode, filterTransmission]
+  );
+
+  const driveOptions = useMemo(() => {
+    const vals = [...new Set(modsAfterTransmission.map((m) => m.driveType).filter(Boolean))] as string[];
+    return vals.map((v) => ({ id: v, label: v }));
+  }, [modsAfterTransmission]);
+
+  const filteredMods = useMemo(
+    () => (filterDrive ? modsAfterTransmission.filter((m) => m.driveType === filterDrive) : modsAfterTransmission),
+    [modsAfterTransmission, filterDrive]
+  );
+
+  const mod = useMemo(() => filteredMods.find((m) => m.id === modId), [filteredMods, modId]);
+
+  // Reset helpers
+  const resetFilters = () => {
+    setFilterEngineType("");
+    setFilterEngineCode("");
+    setFilterTransmission("");
+    setFilterDrive("");
+  };
+
+  const handleBrandChange = (v: string) => {
+    setBrandId(v); setModelId(""); setGenId(""); setModId("");
+    resetFilters(); setHoursMap({}); setSaved(false);
+  };
+  const handleModelChange = (v: string) => {
+    setModelId(v); setGenId(""); setModId("");
+    resetFilters(); setHoursMap({}); setSaved(false);
+  };
+  const handleGenChange = (v: string) => {
+    setGenId(v); setModId("");
+    resetFilters(); setHoursMap({}); setSaved(false);
+  };
+  const handleFilterEngineType = (v: string) => {
+    setFilterEngineType(v); setFilterEngineCode(""); setFilterTransmission(""); setFilterDrive("");
+    setModId(""); setHoursMap({}); setSaved(false);
+  };
+  const handleFilterEngineCode = (v: string) => {
+    setFilterEngineCode(v); setFilterTransmission(""); setFilterDrive("");
+    setModId(""); setHoursMap({}); setSaved(false);
+  };
+  const handleFilterTransmission = (v: string) => {
+    setFilterTransmission(v); setFilterDrive("");
+    setModId(""); setHoursMap({}); setSaved(false);
+  };
+  const handleFilterDrive = (v: string) => {
+    setFilterDrive(v);
+    setModId(""); setHoursMap({}); setSaved(false);
+  };
+
+  const handleModChange = async (v: string) => {
+    setModId(v); setSaved(false); setHoursMap({});
+    if (!v) return;
+    setLoadingHours(true);
+    try {
+      const res = await fetch(`${FUNC_SAVE_NORM_HOURS}?modification_id=${encodeURIComponent(v)}`);
+      if (res.ok) {
+        const raw = await res.json();
+        const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (Array.isArray(data)) {
+          const map: Record<string, string> = {};
+          data.forEach((item: { name: string; hours: number }) => {
+            if (item.hours > 0) map[item.name] = String(item.hours);
+          });
+          setHoursMap(map);
+        }
+      }
+    } catch {
+      // ignore fetch errors, just leave hoursMap empty
+    } finally {
+      setLoadingHours(false);
+    }
   };
 
   const handleHoursChange = (workName: string, val: string) => {
@@ -93,28 +202,53 @@ const TabEditor = () => {
     setSaved(false);
   };
 
-  const handleSaveHours = () => {
+  const handleSaveHours = async () => {
     if (!modId || !mod) return;
-    const worksList = worksDatabase.map((w) => {
-      const existingWork = mod.works.find((ew) => ew.name === w.name);
-      const hours = parseFloat(String(hoursMap[w.name]).replace(",", "."));
-      if (!isNaN(hours) && hours > 0) return { id: existingWork?.id ?? `w-${modId}-${w.id}`, name: w.name, hours };
-      if (existingWork) return existingWork;
-      return null;
-    }).filter(Boolean) as typeof mod.works;
 
-    setCarDatabase(carDatabase.map((b) => ({
-      ...b,
-      models: b.models.map((m) => ({
-        ...m,
-        generations: m.generations.map((g) => ({
-          ...g,
-          modifications: g.modifications.map((mod_) => mod_.id === modId ? { ...mod_, works: worksList } : mod_),
-        })),
-      })),
-    })));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    const works = worksDatabase
+      .map((w) => {
+        const hours = parseFloat(String(hoursMap[w.name]).replace(",", "."));
+        if (!isNaN(hours) && hours > 0) return { name: w.name, hours };
+        return null;
+      })
+      .filter(Boolean) as { name: string; hours: number }[];
+
+    setSavingHours(true);
+    try {
+      const res = await fetch(FUNC_SAVE_NORM_HOURS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modification_id: modId, works }),
+      });
+      if (res.ok) {
+        // Also update local carDatabase so it reflects the changes
+        const worksList = worksDatabase.map((w) => {
+          const existingWork = mod.works.find((ew) => ew.name === w.name);
+          const hours = parseFloat(String(hoursMap[w.name]).replace(",", "."));
+          if (!isNaN(hours) && hours > 0) return { id: existingWork?.id ?? `w-${modId}-${w.id}`, name: w.name, hours };
+          if (existingWork) return existingWork;
+          return null;
+        }).filter(Boolean) as typeof mod.works;
+
+        setCarDatabase(carDatabase.map((b) => ({
+          ...b,
+          models: b.models.map((m) => ({
+            ...m,
+            generations: m.generations.map((g) => ({
+              ...g,
+              modifications: g.modifications.map((mod_) => mod_.id === modId ? { ...mod_, works: worksList } : mod_),
+            })),
+          })),
+        })));
+
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSavingHours(false);
+    }
   };
 
   const filledCount = worksDatabase.filter((w) => {
@@ -341,24 +475,56 @@ const TabEditor = () => {
           <Icon name="Car" size={16} className="text-[hsl(215,70%,22%)]" />
           <h3 className="font-semibold text-sm uppercase tracking-wider">Нормачасы по модификации</h3>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <SelectBox label="Марка" value={brandId}
-            onChange={(v) => { setBrandId(v); setModelId(""); setGenId(""); setModId(""); setHoursMap({}); setSaved(false); }}
-            options={carDatabase.map((b) => ({ id: b.id, label: b.name }))} placeholder="— Марка —" />
-          <SelectBox label="Модель" value={modelId}
-            onChange={(v) => { setModelId(v); setGenId(""); setModId(""); setHoursMap({}); setSaved(false); }}
-            options={brand?.models.map((m) => ({ id: m.id, label: m.name })) || []} placeholder="— Модель —" disabled={!brandId} />
-          <SelectBox label="Поколение" value={genId}
-            onChange={(v) => { setGenId(v); setModId(""); setHoursMap({}); setSaved(false); }}
-            options={model?.generations.map((g) => ({ id: g.id, label: `${g.name} (${g.years})` })) || []} placeholder="— Поколение —" disabled={!modelId} />
-          <SelectBox label="Модификация" value={modId} onChange={handleModChange}
-            options={gen?.modifications.map((m) => ({ id: m.id, label: m.name })) || []} placeholder="— Модификация —" disabled={!genId} />
+        <div className="p-5 space-y-4">
+          {/* Row 1: Марка, Модель, Поколение */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <SelectBox label="Марка" value={brandId} onChange={handleBrandChange}
+              options={carDatabase.map((b) => ({ id: b.id, label: b.name }))} placeholder="-- Марка --" />
+            <SelectBox label="Модель" value={modelId} onChange={handleModelChange}
+              options={brand?.models.map((m) => ({ id: m.id, label: m.name })) || []} placeholder="-- Модель --" disabled={!brandId} />
+            <SelectBox label="Поколение" value={genId} onChange={handleGenChange}
+              options={model?.generations.map((g) => ({ id: g.id, label: `${g.name} (${g.years})` })) || []} placeholder="-- Поколение --" disabled={!modelId} />
+          </div>
+
+          {/* Loading mods indicator */}
+          {modsLoading && genId && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Icon name="Loader2" size={14} className="animate-spin" />
+              Загрузка модификаций...
+            </div>
+          )}
+
+          {/* Row 2: Filter dropdowns (visible when generation is selected and mods loaded) */}
+          {genId && !modsLoading && allMods.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <SelectBox label="Тип двигателя" value={filterEngineType} onChange={handleFilterEngineType}
+                options={engineTypeOptions} placeholder="-- Все --" disabled={!genId} />
+              <SelectBox label="Код двигателя" value={filterEngineCode} onChange={handleFilterEngineCode}
+                options={engineCodeOptions} placeholder="-- Все --" disabled={!genId} />
+              <SelectBox label="КПП" value={filterTransmission} onChange={handleFilterTransmission}
+                options={transmissionOptions} placeholder="-- Все --" disabled={!genId} />
+              <SelectBox label="Привод" value={filterDrive} onChange={handleFilterDrive}
+                options={driveOptions} placeholder="-- Все --" disabled={!genId} />
+            </div>
+          )}
+
+          {/* Row 3: Modification select */}
+          {genId && !modsLoading && allMods.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <SelectBox label="Модификация" value={modId} onChange={handleModChange}
+                options={filteredMods.map((m) => ({ id: m.id, label: m.name }))} placeholder="-- Модификация --" disabled={!genId || filteredMods.length === 0} />
+            </div>
+          )}
         </div>
+
+        {/* Modification info block */}
         {mod && (
           <div className="mx-5 mb-5 p-3 bg-blue-50 border border-blue-100 rounded-md flex flex-wrap gap-5 text-xs">
-            <span><span className="text-muted-foreground">Двигатель: </span><strong>{mod.engine}</strong></span>
-            <span><span className="text-muted-foreground">КПП: </span><strong>{mod.transmission}</strong></span>
-            <span><span className="text-muted-foreground">Мощность: </span><strong>{mod.power}</strong></span>
+            {mod.engine && <span><span className="text-muted-foreground">Двигатель: </span><strong>{mod.engine}</strong></span>}
+            {mod.engineType && <span><span className="text-muted-foreground">Тип: </span><strong>{mod.engineType}</strong></span>}
+            {mod.transmission && <span><span className="text-muted-foreground">КПП: </span><strong>{mod.transmission}</strong></span>}
+            {mod.power && <span><span className="text-muted-foreground">Мощность: </span><strong>{mod.power}</strong></span>}
+            {mod.driveType && <span><span className="text-muted-foreground">Привод: </span><strong>{mod.driveType}</strong></span>}
           </div>
         )}
       </div>
@@ -384,37 +550,51 @@ const TabEditor = () => {
               Заполнено: <strong className="text-[hsl(215,70%,22%)]">{filledCount}</strong> / {worksDatabase.length}
             </span>
           </div>
-          <div className="divide-y divide-border">
-            {worksDatabase.map((work) => {
-              const val = hoursMap[work.name] ?? "";
-              const existing = mod?.works.find((w) => w.name === work.name);
-              const isFilled = val !== "" && !isNaN(parseFloat(String(val).replace(",", "."))) && parseFloat(String(val).replace(",", ".")) > 0;
-              return (
-                <div key={work.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition-colors">
-                  <div className="flex-1">
-                    <span className="text-sm text-foreground">{work.name}</span>
-                    {existing && !val && (
-                      <span className="text-xs text-muted-foreground ml-2">(сейчас: {existing.hours} н/ч)</span>
-                    )}
+
+          {loadingHours ? (
+            <div className="flex items-center justify-center gap-2 p-8 text-muted-foreground text-sm">
+              <Icon name="Loader2" size={16} className="animate-spin" />
+              Загрузка нормачасов...
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {worksDatabase.map((work) => {
+                const val = hoursMap[work.name] ?? "";
+                const existing = mod?.works.find((w) => w.name === work.name);
+                const isFilled = val !== "" && !isNaN(parseFloat(String(val).replace(",", "."))) && parseFloat(String(val).replace(",", ".")) > 0;
+                return (
+                  <div key={work.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition-colors">
+                    <div className="flex-1">
+                      <span className="text-sm text-foreground">{work.name}</span>
+                      {existing && !val && (
+                        <span className="text-xs text-muted-foreground ml-2">(сейчас: {existing.hours} н/ч)</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input type="number" value={val}
+                        onChange={(e) => handleHoursChange(work.name, e.target.value)}
+                        placeholder={existing ? String(existing.hours) : "0.0"}
+                        step="0.1" min="0"
+                        className={`w-24 border rounded px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-[hsl(215,70%,22%)] transition-all ${isFilled ? "border-green-300 bg-green-50" : "border-border"}`}
+                      />
+                      <span className="text-xs text-muted-foreground w-8">н/ч</span>
+                      {isFilled && <Icon name="Check" size={14} className="text-green-500" />}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <input type="number" value={val}
-                      onChange={(e) => handleHoursChange(work.name, e.target.value)}
-                      placeholder={existing ? String(existing.hours) : "0.0"}
-                      step="0.1" min="0"
-                      className={`w-24 border rounded px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-[hsl(215,70%,22%)] transition-all ${isFilled ? "border-green-300 bg-green-50" : "border-border"}`}
-                    />
-                    <span className="text-xs text-muted-foreground w-8">н/ч</span>
-                    {isFilled && <Icon name="Check" size={14} className="text-green-500" />}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
+
           <div className="px-5 py-4 border-t border-border flex items-center gap-3">
-            <button onClick={handleSaveHours}
-              className="flex items-center gap-2 px-6 py-2.5 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm">
-              <Icon name="Save" size={15} />Сохранить нормачасы
+            <button onClick={handleSaveHours} disabled={savingHours}
+              className={`flex items-center gap-2 px-6 py-2.5 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all shadow-sm ${savingHours ? "opacity-60 cursor-not-allowed" : ""}`}>
+              {savingHours ? (
+                <Icon name="Loader2" size={15} className="animate-spin" />
+              ) : (
+                <Icon name="Save" size={15} />
+              )}
+              {savingHours ? "Сохранение..." : "Сохранить нормачасы"}
             </button>
             {saved && (
               <span className="flex items-center gap-1.5 text-sm text-green-600 animate-fade-in">
