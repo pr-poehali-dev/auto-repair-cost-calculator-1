@@ -1,6 +1,9 @@
 import { useState, useMemo } from "react";
 import Icon from "@/components/ui/icon";
 import { useAppData, WorkEntry } from "@/pages/Index";
+import { UploadBlock } from "@/components/admin/AdminPageUIBlocks";
+import { downloadWorksTemplate, mergeWorks, parseWorksList } from "@/components/admin/adminPageHelpers";
+import * as XLSX from "xlsx";
 
 const SelectBox = ({
   label, value, onChange, options, placeholder, disabled,
@@ -20,6 +23,47 @@ const SelectBox = ({
 
 const TabEditor = () => {
   const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase } = useAppData();
+
+  // ── Загрузка списка работ из Excel ─────────────────────────────────────────
+  const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  const parseWorksFile = (file: File, onResult: (w: WorkEntry[]) => void, onError: (m: string) => void) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = new Uint8Array(ev.target!.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: "array" });
+        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+        const works = parseWorksList(rows);
+        if (!works) onError("Файл пустой или не содержит работ.");
+        else onResult(works);
+      } catch { onError("Ошибка чтения файла."); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleWorksFile = (file: File) => parseWorksFile(file, (works) => {
+    setWorksDatabase(works);
+    setWorksStatus({ type: "success", msg: `Загружено ${works.length} видов работ из «${file.name}»` });
+  }, (msg) => setWorksStatus({ type: "error", msg }));
+
+  const handleWorksUpdate = (file: File) => parseWorksFile(file, (incoming) => {
+    const merged = mergeWorks(worksDatabase, incoming);
+    const added = merged.length - worksDatabase.length;
+    setWorksDatabase(merged);
+    setWorksStatus({ type: "success", msg: `Добавлено ${added} новых работ, итого ${merged.length}.` });
+  }, (msg) => setWorksStatus({ type: "error", msg }));
+
+  const handleExportWorksCsv = () => {
+    if (worksDatabase.length === 0) return;
+    const lines = ["Наименование работы", ...worksDatabase.map((w) => w.name)];
+    const csv = "\uFEFF" + lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "список_работ.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // ── Норма-часы по модификации ──────────────────────────────────────────────
   const [brandId, setBrandId] = useState("");
@@ -162,6 +206,30 @@ const TabEditor = () => {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">Управляйте списком работ и проставляйте нормачасы для каждой модификации автомобиля.</p>
+
+      {/* ── Загрузка списка работ из Excel ─────────────────────────────────── */}
+      <UploadBlock
+        title="Загрузите список работ из Excel"
+        description="Один столбец — все виды работ. После загрузки работы появятся в списке ниже."
+        buttonLabel="Загрузить список работ (.xlsx)"
+        accept=".xlsx,.xls"
+        onFile={handleWorksFile}
+        onUpdate={handleWorksUpdate}
+        hasData={worksDatabase.length > 0}
+        onDownloadTemplate={downloadWorksTemplate}
+        status={worksStatus}
+      >
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button
+            onClick={handleExportWorksCsv}
+            disabled={worksDatabase.length === 0}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Icon name="Download" size={13} />
+            Экспорт работ в CSV
+          </button>
+        </div>
+      </UploadBlock>
 
       {/* ── Список работ ──────────────────────────────────────────────────── */}
       <div className="bg-white rounded-lg border border-border shadow-sm">

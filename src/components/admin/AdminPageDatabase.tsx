@@ -1,14 +1,14 @@
 import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
-import { useAppData, WorkEntry } from "@/pages/Index";
+import { useAppData } from "@/pages/Index";
 import { CarBrand } from "@/data/carDatabase";
 import { reapplyWorks, parseCarBase, downloadCarsTemplate as downloadCarsTemplateHelper, FUNC_FETCH_YANDEX_FILE, FUNC_PARSE_YANDEX_FILE } from "@/components/admin/adminHelpers";
 import * as XLSX from "xlsx";
-import { FUNC_SAVE_CARS_TREE, FUNC_IMPORT_CSV, downloadWorksTemplate, mergeCars, mergeWorks, parseWorksList, generateNormsTemplate, parseFilledTemplate } from "@/components/admin/adminPageHelpers";
-import { UploadBlock, StepBadge } from "@/components/admin/AdminPageUIBlocks";
+import { FUNC_SAVE_CARS_TREE, FUNC_IMPORT_CSV, mergeCars } from "@/components/admin/adminPageHelpers";
+import { UploadBlock } from "@/components/admin/AdminPageUIBlocks";
 
 const AdminPageDatabase = () => {
-  const { carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, reloadCarDb, dbSyncStatus } = useAppData();
+  const { carDatabase, setCarDatabase, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, reloadCarDb } = useAppData();
   const [reloadLoading, setReloadLoading] = useState(false);
   const [reloadStatus, setReloadStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const handleReloadDb = async () => {
@@ -84,11 +84,9 @@ const AdminPageDatabase = () => {
         setReloadStatus({ type: "success", msg: `Сохраняю на сервер… ${completed}/${chunks.length}` });
       }
       setCarDatabase(source);
-      setDbReady(true);
       setReloadStatus({ type: "success", msg: `База сохранена на сервер! ${source.length} марок, ${savedMods.toLocaleString("ru-RU")} модификаций. Данные доступны всем пользователям.` });
     } catch (e) {
       setCarDatabase(source);
-      setDbReady(true);
       setReloadStatus({ type: "error", msg: `Сохранено ${savedMods.toLocaleString("ru-RU")} мод., но ошибка: ${e instanceof Error ? e.message : "неизвестная ошибка"}` });
     } finally {
       setReloadLoading(false);
@@ -102,12 +100,7 @@ const AdminPageDatabase = () => {
 
   // DB wizard
   const [carsStatus, setCarsStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [worksStatus, setWorksStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [filledStatus, setFilledStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [pendingCars, setPendingCars] = useState<CarBrand[] | null>(null);
-  const [pendingWorks, setPendingWorks] = useState<WorkEntry[] | null>(() => worksDatabase.length > 0 ? worksDatabase : null);
-  const [dbReady, setDbReady] = useState(false);
-  const filledFileRef = useRef<HTMLInputElement>(null);
   const [exportLoading, setExportLoading] = useState(false);
   const [exportStatus, setExportStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -368,27 +361,11 @@ const AdminPageDatabase = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  const parseWorksFile = (file: File, onResult: (w: WorkEntry[]) => void, onError: (m: string) => void) => {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = new Uint8Array(ev.target!.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: "array" });
-        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-        const works = parseWorksList(rows);
-        if (!works) onError("Файл пустой или не содержит работ.");
-        else onResult(works);
-      } catch { onError("Ошибка чтения файла."); }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
   const handleCarsFile = (file: File) => parseCarsFile(file, (cars) => {
     const withWorks = reapplyWorks(cars, pendingCars ?? carDatabase);
     const total = withWorks.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.length, 0), 0), 0);
     const restored = withWorks.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + (mod.works.length > 0 ? 1 : 0), 0), 0), 0), 0);
     setPendingCars(withWorks);
-    if (worksDatabase.length > 0) setPendingWorks(worksDatabase);
     setCarsStatus({ type: "success", msg: `Загружено: ${cars.length} марок, ${total} модификаций из «${file.name}»${restored > 0 ? `. Восстановлены нормативы для ${restored} модификаций.` : ""}` });
   }, (msg) => setCarsStatus({ type: "error", msg }));
 
@@ -397,7 +374,6 @@ const AdminPageDatabase = () => {
     const merged = mergeCars(base, incoming);
     const withWorks = reapplyWorks(merged, base);
     setPendingCars(withWorks);
-    if (worksDatabase.length > 0) setPendingWorks(worksDatabase);
     setCarsStatus({ type: "success", msg: `Обновлено. Нормативы существующих моделей сохранены.` });
   }, (msg) => setCarsStatus({ type: "error", msg }));
 
@@ -461,56 +437,10 @@ const AdminPageDatabase = () => {
     }
   };
 
-  const handleWorksFile = (file: File) => parseWorksFile(file, (works) => {
-    setPendingWorks(works); setWorksDatabase(works); setWorksStatus({ type: "success", msg: `Загружено ${works.length} видов работ из «${file.name}»` });
-  }, (msg) => setWorksStatus({ type: "error", msg }));
-
-  const handleWorksUpdate = (file: File) => parseWorksFile(file, (incoming) => {
-    const merged = mergeWorks(pendingWorks ?? worksDatabase, incoming);
-    const added = merged.length - (pendingWorks ?? worksDatabase).length;
-    setPendingWorks(merged); setWorksDatabase(merged);
-    setWorksStatus({ type: "success", msg: `Добавлено ${added} новых работ, итого ${merged.length}.` });
-  }, (msg) => setWorksStatus({ type: "error", msg }));
-
-  const handleFilledFile = (file: File) => {
-    const cars = pendingCars ?? carDatabase;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = new Uint8Array(ev.target!.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: "array" });
-        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-        if (rows.length === 0) { setFilledStatus({ type: "error", msg: "Файл пустой." }); return; }
-        const { updatedCars, totalFilled } = parseFilledTemplate(rows, cars);
-        if (totalFilled === 0) {
-          setFilledStatus({ type: "error", msg: "Нормачасы не найдены. Убедитесь что столбец J заполнен числами." });
-        } else {
-          setCarDatabase(updatedCars); if (pendingCars) setPendingCars(updatedCars);
-          setDbReady(true); setFilledStatus({ type: "success", msg: `База знаний готова! Заполнено ${totalFilled} нормативов из «${file.name}»` });
-        }
-      } catch { setFilledStatus({ type: "error", msg: "Ошибка чтения файла." }); }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  const totalWorks = carDatabase.reduce((s, b) => s + b.models.reduce((s2, m) => s2 + m.generations.reduce((s3, g) => s3 + g.modifications.reduce((s4, mod) => s4 + mod.works.length, 0), 0), 0), 0);
   const hasCars = carDatabase.length > 0;
-  const hasWorks = worksDatabase.length > 0;
-  const step1Done = !!pendingCars || hasCars;
-  const step2Done = !!pendingWorks || hasWorks;
-  const step3Done = dbReady || (hasCars && hasWorks && totalWorks > 0);
-  const templateReady = step1Done && step2Done;
 
   return (
     <div className="space-y-6">
-      {/* Step indicators */}
-      <div className="flex flex-wrap gap-4 items-center">
-        <StepBadge n={1} active={!step1Done} done={step1Done} label="База автомобилей" />
-        <Icon name="ChevronRight" size={16} className="text-muted-foreground hidden sm:block" />
-        <StepBadge n={2} active={step1Done && !step2Done} done={step2Done} label="Список работ" />
-        <Icon name="ChevronRight" size={16} className="text-muted-foreground hidden sm:block" />
-        <StepBadge n={3} active={step2Done && !step3Done} done={step3Done} label="Нормативы" />
-      </div>
 
       {/* Блок Яндекс.Диска */}
       <div className="border border-blue-200 rounded-lg p-5 bg-blue-50 space-y-3">
@@ -571,8 +501,7 @@ const AdminPageDatabase = () => {
       </div>
 
       <div className="border-t border-border pt-5 space-y-4">
-        {/* Step 1 */}
-        <UploadBlock title="Шаг 1 — Загрузите базу автомобилей"
+        <UploadBlock title="Загрузите базу автомобилей"
           description="Файл должен содержать все 89 колонок с точными названиями. Структура шаблона:"
           buttonLabel="Загрузить базу авто (.xlsx)" accept=".xlsx,.xls"
           onFile={handleCarsFile} onUpdate={handleCarsUpdate} hasData={hasCars}
@@ -720,77 +649,7 @@ const AdminPageDatabase = () => {
           )}
         </div>
 
-        {/* Step 2 */}
-        <UploadBlock title="Шаг 2 — Загрузите список работ"
-          description="Один столбец — все виды работ. Нормачасы проставляются на шаге 3 или через «Консоль редактирования»."
-          buttonLabel="Загрузить список работ (.xlsx)" accept=".xlsx,.xls"
-          onFile={handleWorksFile} onUpdate={handleWorksUpdate} hasData={hasWorks}
-          onDownloadTemplate={downloadWorksTemplate} status={worksStatus}
-          disabled={!step1Done && !hasCars}>
-          {hasWorks && step1Done && (
-            <div className="mb-3 flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
-              <Icon name="CheckCircle" size={14} className="shrink-0 mt-0.5" />
-              <span>Ранее загруженные <strong>{worksDatabase.length} работ</strong> автоматически привязаны. Этот шаг можно пропустить.</span>
-            </div>
-          )}
-          <div className="overflow-x-auto rounded border border-border mb-4 max-w-xs">
-            <table className="text-xs w-full border-collapse">
-              <thead><tr className="bg-[hsl(215,70%,22%)] text-white"><th className="px-3 py-1.5 text-left">Наименование работы</th></tr></thead>
-              <tbody>
-                {["Замена масла двигателя","Замена тормозных колодок передних","Замена воздушного фильтра","Замена свечей","Замена ремня ГРМ"].map((w, i) => (
-                  <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                    <td className="px-3 py-1.5 border-b border-border text-gray-600">{w}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </UploadBlock>
 
-        {/* Step 3 */}
-        <div className={`border rounded-lg p-5 space-y-4 ${!templateReady ? "opacity-50 pointer-events-none bg-gray-50" : "bg-white border-border"}`}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold text-sm">Шаг 3 — Скачайте шаблон, заполните нормачасы и загрузите обратно</p>
-              <p className="text-xs text-muted-foreground mt-1">Каждая строка = автомобиль × работа. Заполните столбец <strong>J «Нормачасы»</strong>.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <Icon name="FileSpreadsheet" size={20} className="text-[hsl(215,70%,22%)] shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">Шаблон нормативов</p>
-              <p className="text-xs text-muted-foreground">
-                {pendingCars && pendingWorks ? `${pendingCars.length} марок × ${pendingWorks.length} работ` : "Загрузите шаги 1 и 2"}
-              </p>
-            </div>
-            <button onClick={() => generateNormsTemplate(pendingCars ?? carDatabase, pendingWorks ?? worksDatabase)} disabled={!templateReady}
-              className="flex items-center gap-2 px-4 py-2 bg-[hsl(215,70%,22%)] text-white rounded text-sm font-semibold hover:bg-[hsl(215,70%,18%)] transition-all disabled:opacity-50 shrink-0">
-              <Icon name="Download" size={15} />Скачать шаблон
-            </button>
-          </div>
-          {filledStatus && (
-            <div className={`flex items-start gap-2 p-3 rounded-lg border text-xs animate-fade-in ${filledStatus.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
-              <Icon name={filledStatus.type === "success" ? "CheckCircle" : "XCircle"} size={14} className="shrink-0 mt-0.5" />
-              {filledStatus.msg}
-            </div>
-          )}
-          <input ref={filledFileRef} type="file" accept=".xlsx,.xls" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFilledFile(f); e.target.value = ""; }} />
-          <button onClick={() => filledFileRef.current?.click()} disabled={!templateReady}
-            className="flex items-center gap-2 px-4 py-2 border border-[hsl(215,70%,22%)] text-[hsl(215,70%,22%)] rounded text-sm font-semibold hover:bg-blue-50 transition-all disabled:opacity-50">
-            <Icon name="Upload" size={14} />Загрузить заполненный шаблон
-          </button>
-        </div>
-
-        {step3Done && (
-          <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-300 rounded-lg animate-fade-in">
-            <Icon name="CheckCircle" size={22} className="text-green-600 shrink-0" />
-            <div>
-              <p className="font-semibold text-green-800 text-sm">База знаний загружена и готова к работе!</p>
-              <p className="text-xs text-green-700 mt-0.5">Перейдите в «Калькулятор» или используйте «Консоль редактирования» для точечных правок.</p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
