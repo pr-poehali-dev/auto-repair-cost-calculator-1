@@ -147,7 +147,10 @@ def handler(event: dict, context) -> dict:
         result = {}
         for col in ALLOWED_COLS:
             cur.execute(
-                f"SELECT DISTINCT {col} FROM car_modifications WHERE {col} IS NOT NULL AND {col} != '' AND {col} != '—' ORDER BY {col}"
+                f"SELECT DISTINCT UPPER(LEFT(TRIM({col}), 1)) || SUBSTRING(TRIM({col}) FROM 2) AS val "
+                f"FROM car_modifications "
+                f"WHERE {col} IS NOT NULL AND TRIM({col}) != '' AND TRIM({col}) != '—' "
+                f"ORDER BY val"
             )
             result[col] = [r[0] for r in cur.fetchall()]
         cur.close(); conn.close()
