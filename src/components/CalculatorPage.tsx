@@ -225,6 +225,18 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
     if (generationId) loadModifications(generationId);
   }, [generationId, loadModifications]);
 
+  useEffect(() => {
+    if (carDatabase.length === 1 && !brandId) setBrandId(carDatabase[0].id);
+  }, [carDatabase, brandId]);
+
+  useEffect(() => {
+    if (brand && brand.models.length === 1 && !modelId) setModelId(brand.models[0].id);
+  }, [brand, modelId]);
+
+  useEffect(() => {
+    if (model && model.generations.length === 1 && !generationId) setGenerationId(model.generations[0].id);
+  }, [model, generationId]);
+
   const allMods = useMemo(() => generation?.modifications ?? [], [generation]);
 
   // Уникальные значения для каждого фильтра (из оставшихся после предыдущих фильтров)

@@ -86,10 +86,21 @@ const TabEditor = () => {
   const model = useMemo(() => brand?.models.find((m) => m.id === modelId), [brand, modelId]);
   const gen = useMemo(() => model?.generations.find((g) => g.id === genId), [model, genId]);
 
-  // Load modifications when generation changes
   useEffect(() => {
     if (genId) loadModifications(genId);
   }, [genId, loadModifications]);
+
+  useEffect(() => {
+    if (carDatabase.length === 1 && !brandId) setBrandId(carDatabase[0].id);
+  }, [carDatabase, brandId]);
+
+  useEffect(() => {
+    if (brand && brand.models.length === 1 && !modelId) setModelId(brand.models[0].id);
+  }, [brand, modelId]);
+
+  useEffect(() => {
+    if (model && model.generations.length === 1 && !genId) setGenId(model.generations[0].id);
+  }, [model, genId]);
 
   // Cascading filter logic (same as CalculatorPage)
   const allMods = useMemo(() => gen?.modifications ?? [], [gen]);
