@@ -6,6 +6,7 @@ import { downloadWorksTemplate, mergeWorks, parseWorksList } from "@/components/
 import * as XLSX from "xlsx";
 
 const FUNC_SAVE_NORM_HOURS = "https://functions.poehali.dev/be016d37-3b69-438d-a889-6e92b1da9882";
+const FUNC_BULK_NORM_HOURS = "https://functions.poehali.dev/48f937e0-3640-414a-bf9c-47e037dcc225";
 
 const SelectBox = ({
   label, value, onChange, options, placeholder, disabled,
@@ -330,6 +331,86 @@ const TabEditor = () => {
   const [worksSaved, setWorksSaved] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
+  // ── Массовое заполнение нормачасов ──────────────────────────────────────────
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkScope, setBulkScope] = useState<"brand" | "model" | "generation">("brand");
+  const [bulkBrandId, setBulkBrandId] = useState("");
+  const [bulkModelId, setBulkModelId] = useState("");
+  const [bulkGenId, setBulkGenId] = useState("");
+  const [bulkMode, setBulkMode] = useState<"fill_empty" | "overwrite">("fill_empty");
+  const [bulkHoursMap, setBulkHoursMap] = useState<Record<string, string>>({});
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [bulkModCount, setBulkModCount] = useState<number | null>(null);
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+
+  const bulkBrand = useMemo(() => carDatabase.find((b) => b.id === bulkBrandId), [carDatabase, bulkBrandId]);
+  const bulkModel = useMemo(() => bulkBrand?.models.find((m) => m.id === bulkModelId), [bulkBrand, bulkModelId]);
+
+  const bulkScopeId = useMemo(() => {
+    if (bulkScope === "brand") return bulkBrandId;
+    if (bulkScope === "model") return bulkModelId;
+    return bulkGenId;
+  }, [bulkScope, bulkBrandId, bulkModelId, bulkGenId]);
+
+  useEffect(() => {
+    if (!bulkScopeId) { setBulkModCount(null); return; }
+    fetch(`${FUNC_BULK_NORM_HOURS}?scope=${bulkScope}&id=${encodeURIComponent(bulkScopeId)}`)
+      .then((r) => r.json())
+      .then((raw) => {
+        const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+        setBulkModCount(data.count ?? 0);
+      })
+      .catch(() => setBulkModCount(null));
+  }, [bulkScope, bulkScopeId]);
+
+  const bulkFilledWorks = useMemo(() => {
+    return worksDatabase
+      .map((w) => {
+        const h = parseFloat(String(bulkHoursMap[w.name]).replace(",", "."));
+        if (!isNaN(h) && h > 0) return { name: w.name, hours: h };
+        return null;
+      })
+      .filter(Boolean) as { name: string; hours: number }[];
+  }, [worksDatabase, bulkHoursMap]);
+
+  const handleBulkSave = async () => {
+    if (!bulkConfirm) { setBulkConfirm(true); return; }
+    if (!bulkScopeId || bulkFilledWorks.length === 0) return;
+
+    setBulkSaving(true);
+    setBulkResult(null);
+    try {
+      const res = await fetch(FUNC_BULK_NORM_HOURS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: bulkScope,
+          id: bulkScopeId,
+          works: bulkFilledWorks,
+          mode: bulkMode,
+        }),
+      });
+      const raw = await res.json();
+      const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (res.ok && data.ok) {
+        const parts = [];
+        parts.push(`${data.modifications} модификаций обработано`);
+        if (data.inserted > 0) parts.push(`${data.inserted} записей добавлено`);
+        if (data.updated > 0) parts.push(`${data.updated} записей обновлено`);
+        if (data.skipped_by_filter > 0) parts.push(`${data.skipped_by_filter} пропущено по фильтрам доступности`);
+        setBulkResult({ type: "success", msg: parts.join(", ") });
+      } else {
+        setBulkResult({ type: "error", msg: data.error || "Ошибка сохранения" });
+      }
+    } catch {
+      setBulkResult({ type: "error", msg: "Ошибка сети" });
+    } finally {
+      setBulkSaving(false);
+      setBulkConfirm(false);
+    }
+  };
+
   const handleAddWork = () => {
     const name = newWorkName.trim();
     if (!name) { setAddError("Введите название работы"); return; }
@@ -590,6 +671,155 @@ const TabEditor = () => {
             {mod.transmission && <span><span className="text-muted-foreground">КПП: </span><strong>{mod.transmission}</strong></span>}
             {mod.power && <span><span className="text-muted-foreground">Мощность: </span><strong>{mod.power}</strong></span>}
             {mod.driveType && <span><span className="text-muted-foreground">Привод: </span><strong>{mod.driveType}</strong></span>}
+          </div>
+        )}
+      </div>
+
+      {/* ── Массовое заполнение ───────────────────────────────────────── */}
+      <div className="bg-white rounded-lg border border-border shadow-sm">
+        <button
+          onClick={() => setBulkOpen(!bulkOpen)}
+          className="w-full px-5 py-3.5 border-b border-border flex items-center gap-2 hover:bg-gray-50 transition-colors"
+        >
+          <Icon name="Layers" size={16} className="text-[hsl(215,70%,22%)]" />
+          <h3 className="font-semibold text-sm uppercase tracking-wider">Массовое заполнение нормачасов</h3>
+          <Icon name={bulkOpen ? "ChevronUp" : "ChevronDown"} size={16} className="ml-auto text-muted-foreground" />
+        </button>
+
+        {bulkOpen && (
+          <div className="p-5 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Задайте нормачасы для работ — они применятся ко всем модификациям выбранной марки, модели или поколения. Фильтры доступности учитываются автоматически.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Область</label>
+                <select
+                  value={bulkScope}
+                  onChange={(e) => {
+                    const v = e.target.value as "brand" | "model" | "generation";
+                    setBulkScope(v);
+                    if (v === "brand") { setBulkModelId(""); setBulkGenId(""); }
+                    if (v === "model") { setBulkGenId(""); }
+                    setBulkModCount(null);
+                    setBulkResult(null);
+                    setBulkConfirm(false);
+                  }}
+                  className="w-full border border-border rounded px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(215,70%,22%)] cursor-pointer"
+                >
+                  <option value="brand">Вся марка</option>
+                  <option value="model">Одна модель</option>
+                  <option value="generation">Одно поколение</option>
+                </select>
+              </div>
+
+              <SelectBox label="Марка" value={bulkBrandId}
+                onChange={(v) => { setBulkBrandId(v); setBulkModelId(""); setBulkGenId(""); setBulkModCount(null); setBulkResult(null); setBulkConfirm(false); }}
+                options={carDatabase.map((b) => ({ id: b.id, label: b.name }))} placeholder="-- Марка --" />
+
+              {(bulkScope === "model" || bulkScope === "generation") && (
+                <SelectBox label="Модель" value={bulkModelId}
+                  onChange={(v) => { setBulkModelId(v); setBulkGenId(""); setBulkModCount(null); setBulkResult(null); setBulkConfirm(false); }}
+                  options={bulkBrand?.models.map((m) => ({ id: m.id, label: m.name })) || []} placeholder="-- Модель --" disabled={!bulkBrandId} />
+              )}
+
+              {bulkScope === "generation" && (
+                <SelectBox label="Поколение" value={bulkGenId}
+                  onChange={(v) => { setBulkGenId(v); setBulkModCount(null); setBulkResult(null); setBulkConfirm(false); }}
+                  options={bulkModel?.generations.map((g) => ({ id: g.id, label: `${g.name} (${g.years})` })) || []} placeholder="-- Поколение --" disabled={!bulkModelId} />
+              )}
+            </div>
+
+            {bulkModCount !== null && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+                <Icon name="Info" size={13} className="shrink-0" />
+                <span>Будет обработано <strong>{bulkModCount}</strong> модификаций</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-4">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Режим:</label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="radio" name="bulkMode" checked={bulkMode === "fill_empty"}
+                  onChange={() => { setBulkMode("fill_empty"); setBulkConfirm(false); }}
+                  className="accent-[hsl(215,70%,22%)]" />
+                Только пустые (не перезаписывать)
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="radio" name="bulkMode" checked={bulkMode === "overwrite"}
+                  onChange={() => { setBulkMode("overwrite"); setBulkConfirm(false); }}
+                  className="accent-[hsl(215,70%,22%)]" />
+                Перезаписать все
+              </label>
+            </div>
+
+            {worksDatabase.length > 0 && bulkScopeId && (
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="px-4 py-2.5 bg-gray-50 border-b border-border flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Работы и нормачасы</span>
+                  <span className="text-xs text-muted-foreground">
+                    Заполнено: <strong className="text-[hsl(215,70%,22%)]">{bulkFilledWorks.length}</strong> / {worksDatabase.length}
+                  </span>
+                </div>
+                <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                  {worksDatabase.map((work) => {
+                    const val = bulkHoursMap[work.name] ?? "";
+                    const isFilled = val !== "" && !isNaN(parseFloat(String(val).replace(",", "."))) && parseFloat(String(val).replace(",", ".")) > 0;
+                    return (
+                      <div key={work.id} className="flex items-center gap-4 px-4 py-2.5 hover:bg-gray-50 transition-colors">
+                        <span className="flex-1 text-sm text-foreground">{work.name}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <input type="number" value={val}
+                            onChange={(e) => { setBulkHoursMap((prev) => ({ ...prev, [work.name]: e.target.value })); setBulkConfirm(false); }}
+                            placeholder="0.0" step="0.1" min="0"
+                            className={`w-24 border rounded px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-[hsl(215,70%,22%)] transition-all ${isFilled ? "border-green-300 bg-green-50" : "border-border"}`}
+                          />
+                          <span className="text-xs text-muted-foreground w-8">н/ч</span>
+                          {isFilled && <Icon name="Check" size={14} className="text-green-500" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {bulkResult && (
+              <div className={`flex items-center gap-2 px-4 py-3 rounded-lg border text-sm font-medium animate-fade-in ${
+                bulkResult.type === "success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
+              }`}>
+                <Icon name={bulkResult.type === "success" ? "CheckCircle" : "AlertCircle"} size={16} />
+                {bulkResult.msg}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleBulkSave}
+                disabled={bulkSaving || !bulkScopeId || bulkFilledWorks.length === 0}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded text-sm font-semibold transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed ${
+                  bulkConfirm
+                    ? "bg-orange-500 text-white hover:bg-orange-600"
+                    : "bg-[hsl(215,70%,22%)] text-white hover:bg-[hsl(215,70%,18%)]"
+                }`}
+              >
+                {bulkSaving ? (
+                  <Icon name="Loader2" size={15} className="animate-spin" />
+                ) : bulkConfirm ? (
+                  <Icon name="AlertTriangle" size={15} />
+                ) : (
+                  <Icon name="Layers" size={15} />
+                )}
+                {bulkSaving ? "Применяю..." : bulkConfirm ? "Подтвердить применение" : `Применить к ${bulkModCount ?? "?"} модификациям`}
+              </button>
+              {bulkConfirm && !bulkSaving && (
+                <button onClick={() => setBulkConfirm(false)}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Отмена
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

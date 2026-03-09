@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET without id returns error",
+      "method": "GET",
+      "path": "/?scope=brand",
+      "expectedStatus": 400
+    },
+    {
+      "name": "POST without data returns error",
+      "method": "POST",
+      "path": "/",
+      "body": {"scope": "brand", "id": "", "works": []},
+      "expectedStatus": 400
+    }
+  ]
+}
