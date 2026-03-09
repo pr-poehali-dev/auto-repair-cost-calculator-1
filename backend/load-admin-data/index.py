@@ -25,6 +25,13 @@ def handler(event: dict, context) -> dict:
     conn = get_conn()
     cur = conn.cursor()
 
+    if key == "works":
+        cur.execute("SELECT id, name FROM works ORDER BY sort_order, created_at")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps([{"id": r[0], "name": r[1]} for r in rows])}
+
     if key:
         cur.execute("SELECT value FROM admin_data WHERE key = %s", (key,))
         row = cur.fetchone()
@@ -34,10 +41,15 @@ def handler(event: dict, context) -> dict:
             return {"statusCode": 200, "headers": CORS, "body": json.dumps(row[0])}
         return {"statusCode": 200, "headers": CORS, "body": json.dumps(None)}
 
-    cur.execute("SELECT key, value FROM admin_data")
+    cur.execute("SELECT key, value FROM admin_data WHERE key != 'works'")
     rows = cur.fetchall()
+    result = {r[0]: r[1] for r in rows}
+
+    cur.execute("SELECT id, name FROM works ORDER BY sort_order, created_at")
+    works_rows = cur.fetchall()
+    result["works"] = [{"id": r[0], "name": r[1]} for r in works_rows]
+
     cur.close()
     conn.close()
 
-    result = {r[0]: r[1] for r in rows}
     return {"statusCode": 200, "headers": CORS, "body": json.dumps(result)}

@@ -1,0 +1,1 @@
+INSERT INTO works (id, name, sort_order) VALUES ('w1', 'Test work', 0) ON CONFLICT (id) DO NOTHING;
