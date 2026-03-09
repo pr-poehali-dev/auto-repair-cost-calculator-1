@@ -314,7 +314,7 @@ const CalculatorPage = ({ onAddToHistory }: Props) => {
   }, [filteredMods, modificationId, generationId, modsLoading]);
 
   const modification = useMemo(() => filteredMods.find((m) => m.id === modificationId), [filteredMods, modificationId]);
-  const works = useMemo(() => modification?.works ?? [], [modification]);
+  const works = useMemo(() => (modification?.works ?? []).filter((w) => w.hours > 0), [modification]);
 
   // Набор заблокированных работ для данной модификации
   const blockedWorkNames = useMemo(() => {

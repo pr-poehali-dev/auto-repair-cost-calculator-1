@@ -40,8 +40,64 @@ MOD_COLUMNS = """id, name, engine, transmission, power,
 LIGHT_MOD_COLS = "id, name, engine, transmission, power, engine_type, engine_code, drive_type, turbo_type, front_brakes, rear_brakes, front_suspension, rear_suspension"
 
 
+FILTER_PARAM_MAP = {
+    "engineType": "engineType",
+    "transmission": "transmission",
+    "frontBrakes": "frontBrakes",
+    "rearBrakes": "rearBrakes",
+    "driveType": "driveType",
+    "frontSuspension": "frontSuspension",
+    "rearSuspension": "rearSuspension",
+    "turboType": "turboType",
+}
+
+
 def get_conn():
     return psycopg2.connect(os.environ["DATABASE_URL"])
+
+
+def is_work_available(work_name, mod, work_filters):
+    for wf in work_filters:
+        if wf.get("workName") != work_name:
+            continue
+        active_rules = [r for r in wf.get("rules", []) if r.get("allowedValues")]
+        if not active_rules:
+            continue
+        for rule in active_rules:
+            param = rule["param"]
+            mod_key = FILTER_PARAM_MAP.get(param, param)
+            mod_val = (mod.get(mod_key) or "").strip()
+            if not mod_val or mod_val == "\u2014":
+                continue
+            if mod_val not in rule["allowedValues"]:
+                return False
+    return True
+
+
+def merge_all_works(mods, cur):
+    cur.execute("SELECT id, name FROM works ORDER BY sort_order, created_at")
+    all_works = [{"id": r[0], "name": r[1]} for r in cur.fetchall()]
+    if not all_works:
+        return
+
+    cur.execute("SELECT value FROM admin_data WHERE key = 'work_filters'")
+    row = cur.fetchone()
+    work_filters = []
+    if row and row[0]:
+        val = row[0]
+        work_filters = json.loads(val) if isinstance(val, str) else val
+
+    for m in mods:
+        existing_names = {w["name"] for w in m["works"]}
+        for work in all_works:
+            if work["name"] in existing_names:
+                continue
+            if is_work_available(work["name"], m, work_filters):
+                m["works"].append({
+                    "id": f"w-{m['id']}-{work['name']}",
+                    "name": work["name"],
+                    "hours": 0,
+                })
 
 
 def mod_to_dict(m):
@@ -202,6 +258,7 @@ def handler(event: dict, context) -> dict:
                         if m["id"] == wr[0]:
                             m["works"].append({"id": f"w-{wr[0]}-{wr[1]}", "name": wr[1], "hours": float(wr[2])})
                             break
+            merge_all_works(mods, cur)
             cur.close(); conn.close()
             return {"statusCode": 200, "headers": CORS, "body": json.dumps(mods)}
 
