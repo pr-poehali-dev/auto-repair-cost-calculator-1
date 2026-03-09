@@ -19,6 +19,12 @@
       "expectedStatus": 200
     },
     {
+      "name": "GET distinct values",
+      "method": "GET",
+      "path": "/?distinct_values=1",
+      "expectedStatus": 200
+    },
+    {
       "name": "GET meta info",
       "method": "GET",
       "path": "/",

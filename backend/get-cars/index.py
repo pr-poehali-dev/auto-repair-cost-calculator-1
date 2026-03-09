@@ -139,6 +139,27 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {"statusCode": 200, "headers": CORS, "body": json.dumps({"modifications": cnt, "brands": brands_cnt})}
 
+    if params.get("distinct_values"):
+        ALLOWED_COLS = {
+            "engine_type", "transmission", "front_brakes", "rear_brakes",
+            "drive_type", "front_suspension", "rear_suspension", "turbo_type",
+        }
+        result = {}
+        for col in ALLOWED_COLS:
+            cur.execute(
+                f"SELECT DISTINCT {col} FROM car_modifications WHERE {col} IS NOT NULL AND {col} != '' AND {col} != '—' ORDER BY {col}"
+            )
+            result[col] = [r[0] for r in cur.fetchall()]
+        cur.close(); conn.close()
+        camel = {
+            "engine_type": "engineType", "transmission": "transmission",
+            "front_brakes": "frontBrakes", "rear_brakes": "rearBrakes",
+            "drive_type": "driveType", "front_suspension": "frontSuspension",
+            "rear_suspension": "rearSuspension", "turbo_type": "turboType",
+        }
+        out = {camel.get(k, k): v for k, v in result.items()}
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps(out)}
+
     if params.get("brands"):
         cur.execute("SELECT id, name FROM car_brands ORDER BY name")
         rows = cur.fetchall()

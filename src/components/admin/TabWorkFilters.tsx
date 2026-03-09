@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import {
   useAppData,
@@ -9,21 +9,7 @@ import {
   WORK_FILTER_PARAM_LABELS,
 } from "@/pages/Index";
 
-// Получить все уникальные значения параметра из базы авто
-function collectValues(carDatabase: ReturnType<typeof useAppData>["carDatabase"], param: WorkFilterParam): string[] {
-  const set = new Set<string>();
-  carDatabase.forEach((brand) =>
-    brand.models.forEach((model) =>
-      model.generations.forEach((gen) =>
-        gen.modifications.forEach((mod) => {
-          const val = (mod as Record<string, unknown>)[param];
-          if (val && typeof val === "string" && val.trim() && val !== "—") set.add(val.trim());
-        })
-      )
-    )
-  );
-  return Array.from(set).sort();
-}
+const FUNC_GET_CARS = "https://functions.poehali.dev/135a6c4a-9149-40f9-a7a8-cf2ce637fdb2";
 
 function emptyFilter(worksDatabase: ReturnType<typeof useAppData>["worksDatabase"]): WorkFilter {
   void worksDatabase;
@@ -46,7 +32,7 @@ const PARAM_ICONS: Record<WorkFilterParam, string> = {
 };
 
 export default function TabWorkFilters() {
-  const { worksDatabase, workFilters, setWorkFilters, carDatabase } = useAppData();
+  const { worksDatabase, workFilters, setWorkFilters } = useAppData();
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<WorkFilter | null>(null);
@@ -56,17 +42,30 @@ export default function TabWorkFilters() {
   const [saved, setSaved] = useState(false);
   const [workSearch, setWorkSearch] = useState("");
   const [paramSearch, setParamSearch] = useState<Partial<Record<WorkFilterParam, string>>>({});
+  const [paramValues, setParamValues] = useState<Record<WorkFilterParam, string[]>>(() => {
+    const empty = {} as Record<WorkFilterParam, string[]>;
+    WORK_FILTER_PARAMS.forEach((p) => { empty[p] = []; });
+    return empty;
+  });
+  const [valuesLoading, setValuesLoading] = useState(false);
+
+  useEffect(() => {
+    setValuesLoading(true);
+    fetch(`${FUNC_GET_CARS}?distinct_values=1`)
+      .then((r) => r.json())
+      .then((raw) => {
+        const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+        const result = {} as Record<WorkFilterParam, string[]>;
+        WORK_FILTER_PARAMS.forEach((p) => {
+          result[p] = Array.isArray(data[p]) ? data[p] : [];
+        });
+        setParamValues(result);
+      })
+      .catch(() => {})
+      .finally(() => setValuesLoading(false));
+  }, []);
 
   const workNames = useMemo(() => worksDatabase.map((w) => w.name), [worksDatabase]);
-
-  // Значения каждого параметра из реальной базы
-  const paramValues = useMemo(() => {
-    const result = {} as Record<WorkFilterParam, string[]>;
-    WORK_FILTER_PARAMS.forEach((p) => {
-      result[p] = collectValues(carDatabase, p);
-    });
-    return result;
-  }, [carDatabase]);
 
   const filteredWorks = useMemo(() => {
     const q = workSearch.toLowerCase();
@@ -306,7 +305,12 @@ export default function TabWorkFilters() {
                           )}
                         </div>
 
-                        {values.length === 0 ? (
+                        {valuesLoading ? (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <div className="w-3 h-3 border-2 border-[hsl(25,95%,50%)] border-t-transparent rounded-full animate-spin" />
+                            Загружаю значения из БД...
+                          </div>
+                        ) : values.length === 0 ? (
                           <p className="text-xs text-muted-foreground italic">Нет данных в базе авто</p>
                         ) : (
                           <>
