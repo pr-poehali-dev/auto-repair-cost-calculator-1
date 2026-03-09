@@ -231,11 +231,11 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState<Tab>("calculator");
   const [ratePerHour, setRatePerHour] = useState<number>(2500);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [carDatabase, setCarDatabaseRaw] = useState<CarBrand[]>(() => loadLS<CarBrand[]>(LS_CARS, []));
-  const [worksDatabase, setWorksDatabaseRaw] = useState<WorkEntry[]>(() => loadLS<WorkEntry[]>(LS_WORKS, []));
-  const [branches, setBranchesRaw] = useState<Branch[]>(() => loadLS<Branch[]>(LS_BRANCHES, DEFAULT_BRANCHES));
-  const [workLinks, setWorkLinksRaw] = useState<WorkLinkGroup[]>(() => loadLS<WorkLinkGroup[]>(LS_LINKS, []));
-  const [workFilters, setWorkFiltersRaw] = useState<WorkFilter[]>(() => loadLS<WorkFilter[]>(LS_WORK_FILTERS, []));
+  const [carDatabase, setCarDatabaseRaw] = useState<CarBrand[]>([]);
+  const [worksDatabase, setWorksDatabaseRaw] = useState<WorkEntry[]>([]);
+  const [branches, setBranchesRaw] = useState<Branch[]>(DEFAULT_BRANCHES);
+  const [workLinks, setWorkLinksRaw] = useState<WorkLinkGroup[]>([]);
+  const [workFilters, setWorkFiltersRaw] = useState<WorkFilter[]>([]);
   const [carDbCount, setCarDbCount] = useState<number>(0);
   const [carDbLoading, setCarDbLoading] = useState<boolean>(false);
   const [modsLoading, setModsLoading] = useState<boolean>(false);
@@ -245,10 +245,7 @@ const Index = () => {
   const [autoSyncStatus, setAutoSyncStatus] = useState<AutoSyncStatus>("idle");
   const [autoSyncMsg, setAutoSyncMsg] = useState<string>("");
   const [dbSyncStatus, setDbSyncStatus] = useState<DbSyncStatus>("idle");
-  const [dbReady, setDbReady] = useState<boolean>(() => {
-    const cached = localStorage.getItem(LS_CARS);
-    return cached !== null && cached !== "[]";
-  });
+  const [dbReady, setDbReady] = useState<boolean>(false);
   const autoSyncRanRef = useRef(false);
 
   useEffect(() => { dbSyncState.setter = setDbSyncStatus; return () => { dbSyncState.setter = null; }; }, []);
