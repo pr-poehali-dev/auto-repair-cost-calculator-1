@@ -61,7 +61,7 @@ import CalculatorPage from "@/components/CalculatorPage";
 import AdminPage from "@/components/AdminPage";
 import HistoryPage from "@/components/HistoryPage";
 import HelpPage from "@/components/HelpPage";
-import { CAR_DATABASE, CarBrand } from "@/data/carDatabase";
+import { CarBrand } from "@/data/carDatabase";
 
 export type Tab = "calculator" | "admin" | "history" | "help";
 
@@ -197,7 +197,7 @@ interface AppDataContextType {
 }
 
 export const AppDataContext = createContext<AppDataContextType>({
-  carDatabase: CAR_DATABASE,
+  carDatabase: [],
   setCarDatabase: () => {},
   worksDatabase: [],
   setWorksDatabase: () => {},
@@ -227,7 +227,7 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState<Tab>("calculator");
   const [ratePerHour, setRatePerHour] = useState<number>(2500);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [carDatabase, setCarDatabaseRaw] = useState<CarBrand[]>(() => loadLS<CarBrand[]>(LS_CARS, CAR_DATABASE));
+  const [carDatabase, setCarDatabaseRaw] = useState<CarBrand[]>(() => loadLS<CarBrand[]>(LS_CARS, []));
   const [worksDatabase, setWorksDatabaseRaw] = useState<WorkEntry[]>(() => loadLS<WorkEntry[]>(LS_WORKS, []));
   const [branches, setBranchesRaw] = useState<Branch[]>(() => loadLS<Branch[]>(LS_BRANCHES, DEFAULT_BRANCHES));
   const [workLinks, setWorkLinksRaw] = useState<WorkLinkGroup[]>(() => loadLS<WorkLinkGroup[]>(LS_LINKS, []));
@@ -239,6 +239,10 @@ const Index = () => {
   const [autoSyncStatus, setAutoSyncStatus] = useState<AutoSyncStatus>("idle");
   const [autoSyncMsg, setAutoSyncMsg] = useState<string>("");
   const [dbSyncStatus, setDbSyncStatus] = useState<DbSyncStatus>("idle");
+  const [dbReady, setDbReady] = useState<boolean>(() => {
+    const cached = localStorage.getItem(LS_CARS);
+    return cached !== null && cached !== "[]";
+  });
   const autoSyncRanRef = useRef(false);
 
   useEffect(() => { dbSyncState.setter = setDbSyncStatus; return () => { dbSyncState.setter = null; }; }, []);
@@ -320,50 +324,44 @@ const Index = () => {
   const dbLoadedRef = useRef(false);
 
   useEffect(() => {
+    if (dbLoadedRef.current) return;
+    dbLoadedRef.current = true;
+
     reloadCarDb();
+
+    const loadFromServer = async () => {
+      try {
+        const [adminRes, carsRes] = await Promise.all([
+          fetch(FUNC_LOAD_ADMIN).then((r) => r.json()).then((raw) => typeof raw === "string" ? JSON.parse(raw) : raw),
+          fetch(FUNC_GET_CARS).then((r) => r.json()).then((raw) => typeof raw === "string" ? JSON.parse(raw) : raw),
+        ]);
+
+        if (Array.isArray(adminRes.works)) { setWorksDatabaseRaw(adminRes.works); saveLS(LS_WORKS, adminRes.works); }
+        if (Array.isArray(adminRes.work_links)) { setWorkLinksRaw(adminRes.work_links); saveLS(LS_LINKS, adminRes.work_links); }
+        if (Array.isArray(adminRes.work_filters)) { setWorkFiltersRaw(adminRes.work_filters); saveLS(LS_WORK_FILTERS, adminRes.work_filters); }
+        if (Array.isArray(adminRes.branches) && adminRes.branches.length > 0) { setBranchesRaw(adminRes.branches); saveLS(LS_BRANCHES, adminRes.branches); }
+        if (adminRes.settings && typeof adminRes.settings === "object") {
+          if (adminRes.settings.ratePerHour) setRatePerHour(adminRes.settings.ratePerHour);
+        }
+
+        if (Array.isArray(carsRes) && carsRes.length > 0) {
+          setCarDatabaseRaw(carsRes);
+          saveLS(LS_CARS, carsRes);
+        }
+      } catch {
+        // fallback: keep cached localStorage data
+      } finally {
+        setDbReady(true);
+      }
+    };
+
+    loadFromServer();
+
     if (!autoSyncRanRef.current) {
       autoSyncRanRef.current = true;
       const enabled = loadLS<boolean>(LS_CARS_URL_ENABLED, false);
       const url = loadLS<string>(LS_CARS_URL, "");
       if (enabled && url) runAutoSync(url);
-    }
-    if (!dbLoadedRef.current) {
-      dbLoadedRef.current = true;
-      fetch(FUNC_LOAD_ADMIN)
-        .then((r) => r.json())
-        .then((raw) => {
-          const data = typeof raw === "string" ? JSON.parse(raw) : raw;
-          if (data.works && Array.isArray(data.works) && data.works.length > 0) {
-            setWorksDatabaseRaw(data.works);
-            saveLS(LS_WORKS, data.works);
-          }
-          if (data.work_links && Array.isArray(data.work_links) && data.work_links.length > 0) {
-            setWorkLinksRaw(data.work_links);
-            saveLS(LS_LINKS, data.work_links);
-          }
-          if (data.work_filters && Array.isArray(data.work_filters) && data.work_filters.length > 0) {
-            setWorkFiltersRaw(data.work_filters);
-            saveLS(LS_WORK_FILTERS, data.work_filters);
-          }
-          if (data.branches && Array.isArray(data.branches) && data.branches.length > 0) {
-            setBranchesRaw(data.branches);
-            saveLS(LS_BRANCHES, data.branches);
-          }
-          if (data.settings && typeof data.settings === "object") {
-            if (data.settings.ratePerHour) setRatePerHour(data.settings.ratePerHour);
-          }
-        })
-        .catch(() => {});
-      fetch(FUNC_GET_CARS)
-        .then((r) => r.json())
-        .then((raw) => {
-          const tree = typeof raw === "string" ? JSON.parse(raw) : raw;
-          if (Array.isArray(tree) && tree.length > 0) {
-            setCarDatabaseRaw(tree);
-            saveLS(LS_CARS, tree);
-          }
-        })
-        .catch(() => {});
     }
   }, [reloadCarDb, runAutoSync]);
   const setBranches = (fn: (prev: Branch[]) => Branch[]) => {
@@ -383,6 +381,16 @@ const Index = () => {
     };
     setHistory((prev) => [newItem, ...prev]);
   };
+
+  if (!dbReady) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
+        <div className="w-10 h-10 border-4 border-[hsl(25,95%,50%)] border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-foreground font-montserrat font-semibold text-lg">Загрузка данных...</p>
+        <p className="text-muted-foreground text-sm mt-1">Подключаемся к серверу</p>
+      </div>
+    );
+  }
 
   return (
     <AppDataContext.Provider value={{ carDatabase, setCarDatabase, worksDatabase, setWorksDatabase, branches, setBranches, defaultRate: ratePerHour, workLinks, setWorkLinks, workFilters, setWorkFilters, carDbCount, carDbLoading, reloadCarDb, carsUrl, setCarsUrl, carsUrlEnabled, setCarsUrlEnabled, autoSyncStatus, autoSyncMsg, triggerAutoSync, dbSyncStatus }}>
